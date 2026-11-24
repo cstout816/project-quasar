@@ -1,6 +1,24 @@
-# Steel Battalion project status
+# Project Quasar status
 
-## Current index — r416, 2026-10-30
+## Current checkpoint
+
+The same Windows AOT build reached the original Mission 00 cockpit on two separate launches. Both runs visibly responded to Hatch and continued updating for at least 60 seconds afterward. The observed rate was about 1 FPS, with visual artifacts. Full startup, driving and campaign completion still need verification.
+
+Each bar counts completed checkpoints from the scope named in that row.
+
+| Area | Progress | Scope |
+| --- | --- | --- |
+| Project | `██░░░░░░ 2/8` | Completed project milestones |
+| AOT | `██ 2/2` | Verified XBE and built native executable |
+| Boot and loading | `████ 4/4` | Title, new pilot, difficulty and first mission frame |
+| First mission validation | `██ 2/2` | Same candidate with visible input and 60 seconds of progression on each launch |
+| Rendering | `██░░ 2/4` | Visible intro and cockpit, then clean graphics and validated display enhancements |
+| Controls | `███░ 3/4` | Menu response, startup report tests, live cockpit response and original hardware |
+| Audio | `░ 0/1` | Verified mission audio |
+| Performance | `░ 0/1` | Stable 60 FPS in gameplay |
+| Launch and distribution | `░░░ 0/3` | Launcher, clean installation and verified package |
+
+## Historical checkpoint — r416, 2026-10-30
 
 **Milestone 3 remains active. First visually verified mission frame: 0/1.** r415 reproduced the post-difficulty mode-2 plateau after the screen-gated new-pilot route through Normal. The worker completed and resource `0x1E` became ready, but the loader pair stopped at `0x000ABA00/0`; sampled reads succeeded and do not identify the missing dependency or consumer. r416 reproduced a separate title-stage DCF4 wait before pilot-list dispatch; raster workers were idle after a transient queue drained. Neither run reached a verified mission frame, and no runtime fix is supported. See the [r414–r416 report](../analysis/m3-r414-r416-loading-and-title-wait-20261030.md) and [current status](../analysis/CURRENT_STATUS.md).
 

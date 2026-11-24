@@ -1,16 +1,16 @@
 <div align="center">
 
-# Steel Battalion for Windows
+# Project Quasar
 
-**A community preservation project exploring static recompilation of the original Xbox game**
+**A community preservation project bringing the original Xbox Steel Battalion to Windows through static recompilation**
 
 ### Experimental development · No playable build yet
 
-[Can I play it?](docs/PLAYER_GUIDE.md) · [Project progress](docs/DEVELOPMENT_STATUS.md) · [Community and controller plans](docs/community-compatibility-preservation.md)
+[Can I play it?](docs/PLAYER_GUIDE.md) · [Project progress](docs/PROJECT_STATUS.md) · [Community and controller plans](docs/community-compatibility-preservation.md)
 
 </div>
 
-> **For players:** there is no playable build to download yet. r519 reached the visible `NOW LOADING` screen after selecting a mission, but no mission frame has been verified. r521 reached the new-pilot name editor before a DirectSound list-walk crash; r522 remained at the title/player-record prompt after an accepted input branch. Complete audio, the original Steel Battalion controller, and campaign completion remain unverified. There is no installer or launcher. Please do not send game files.
+> **For players:** an experimental Windows build reached the original Mission 00 cockpit twice. Both launches responded to the Hatch control and continued for over a minute. The runs were about 1 FPS and showed rendering artifacts. A playable download, installer and launcher are pending. Please do not send game files.
 
 ## The game and its controller
 
@@ -33,15 +33,15 @@ These externally hosted images show the original hardware and game. They are not
 
 The goal is to translate the original Xbox version of *Steel Battalion* (2002) ahead of time into a Windows application and recreate the Xbox services it needs. This is called **static recompilation**. The project is not an emulator packaged under another name.
 
-The translated Windows program builds, but it is not reliable or playable. r519 reached `NOW LOADING`; its mode-2 loader pair stopped at `0x000ABA00/0` after resource `0x1E` became ready. r521 reached the new-pilot name editor, then crashed in the DirectSound list-walk path. r522 confirmed an input edge through the guest title-route branch but stayed at the player-record prompt; its sampled DCE4 wait returned, and the report-address path was not reached. Keep the title/input stop, r521 DirectSound corruption, r502 mode-2 plateau, and r495/r501 report retry separate. No mission frame is verified. See the [current status index](analysis/CURRENT_STATUS.md) and the [r522 technical report](analysis/m3-r522-report-allocator-route-and-storage-20261031.md).
+Two independent screen-gated new-pilot runs used the same native Windows AOT build. The game played the intro, loaded the world resource it needed, and removed the white loading fade through the original game logic. Both runs showed Hatch response and at least 60 seconds of continuing mission updates afterward. [Project status](docs/PROJECT_STATUS.md)
 
 ## Controller compatibility
 
-The original 40-button Steel Battalion controller and pedals are central compatibility targets, alongside keyboard, mouse, gamepad, HOTAS, and custom controller profiles. A virtual-device test verified the 26-byte Main Weapon report and a corresponding guest action-state change. In the pilot-name editor, a scripted left-stick input visibly moved the selected letter from A to B; the direction mapping still needs a matched up/down check. No complete control scheme or in-game response is verified.
+The original 40-button Steel Battalion controller and pedals are central compatibility targets, alongside keyboard, mouse, gamepad, HOTAS and custom controller profiles. Main Weapon and the left stick have been verified in the original menus, and the mapped Hatch control has been verified in Mission 00. A virtual USB controller test also verified the report fields for Ignition, the startup switches, gears, brake and accelerator. Full startup and physical controller adapters still need gameplay testing.
 
 ## What you can do here
 
-- **Learn the current state:** read the [player guide](docs/PLAYER_GUIDE.md) and [project progress tracker](docs/DEVELOPMENT_STATUS.md).
+- **Learn the current state:** read the [player guide](docs/PLAYER_GUIDE.md) and [project progress tracker](docs/PROJECT_STATUS.md).
 - **Follow the technical work:** see [research and architecture](docs/milestone-1-research.md) and the [audio DSP integration plan](docs/audio-dsp-integration-plan.md).
 - **Share community knowledge:** visit [Steel Battalion Online on Reddit](https://www.reddit.com/r/steelbattaliononline/) or the [community Discord](https://discord.gg/steelbattalion).
 

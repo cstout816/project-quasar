@@ -1,8 +1,8 @@
-# Player guide
+# Project Quasar player guide
 
 ## Can I play it now?
 
-**No. This project does not have a playable Windows release yet.** It has not reached the game's title screen, and there is no installer or launcher to download. The team is working on getting the original game to start reliably before adding modern display or controller options.
+**The project is still in experimental development.** The same Windows build reached the original Mission 00 cockpit twice. The Hatch control moved the cockpit hatch on both runs, and the game kept updating for over a minute afterward. It ran at about 1 FPS, with visible graphics artifacts. A playable download, installer and launcher are pending.
 
 Please do not download an unofficial build or expect an ISO to be included here. The project will never distribute the game, its disc image, or its extracted files.
 
