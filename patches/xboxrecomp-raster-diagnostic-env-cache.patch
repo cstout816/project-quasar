@@ -1,0 +1,75 @@
+diff --git a/src/kernel/nv2a_pb_exec.c b/src/kernel/nv2a_pb_exec.c
+--- a/src/kernel/nv2a_pb_exec.c
++++ b/src/kernel/nv2a_pb_exec.c
+@@ -2280,6 +2280,11 @@
+     int opaque_black, validate_opaque_black;
+ } XfTri;
+ 
++/* Diagnostic switches are fixed at executor startup. Workers only read them. */
++static int s_xf_trace_opaque_black;
++static int s_xf_validate_diffuse_mul;
++static int s_xf_validate_diffuse_passthrough;
++
+ typedef struct {
+     uint64_t depth_fail, pixels, black_checked, black_mismatches;
+     uint64_t mul_rc_checked, mul_rc_mismatches;
+@@ -2433,10 +2438,8 @@
+     int x, y, k;
+     int diffuse_texture_mul = xf_diffuse_texture_mul_gate(T);
+     int diffuse_passthrough = xf_diffuse_passthrough_gate(T);
+-    int validate_mul = diffuse_texture_mul
+-                     && getenv("RECOMP_VALIDATE_DIFFUSE_TEXTURE_MUL") != NULL;
+-    int validate_passthrough = diffuse_passthrough
+-                             && getenv("RECOMP_VALIDATE_DIFFUSE_PASSTHROUGH") != NULL;
++    int validate_mul = diffuse_texture_mul && s_xf_validate_diffuse_mul;
++    int validate_passthrough = diffuse_passthrough && s_xf_validate_diffuse_passthrough;
+ #if defined(_WIN32)
+     int trace_rows = 0;
+ #endif
+@@ -3178,9 +3181,8 @@
+     s_gpu.xf_drawn++;
+     T.inv_area = 1.0f / area;
+ 
+-    if (getenv("RECOMP_OPAQUE_BLACK_TRACE")
+-        || getenv("RECOMP_VALIDATE_DIFFUSE_TEXTURE_MUL")
+-        || getenv("RECOMP_VALIDATE_DIFFUSE_PASSTHROUGH")
++    if (s_xf_trace_opaque_black || s_xf_validate_diffuse_mul
++        || s_xf_validate_diffuse_passthrough
+         || xf_texture_feedback(&T)
+         || !xf_queue_push(&T)) {
+         uint64_t pixels = (uint64_t)(T.maxx - T.minx)
+@@ -3189,21 +3191,19 @@
+          * draw takes the serial path. */
+         xf_queue_flush();
+         xf_rows_parallel(&T, 1, pixels, &cnt);
+-        if (T.opaque_black && getenv("RECOMP_OPAQUE_BLACK_TRACE"))
++        if (T.opaque_black && s_xf_trace_opaque_black)
+             fprintf(stderr,
+                     "[OPAQUE-BLACK] mode=%s pixels=%llu checked=%llu mismatches=%llu\n",
+                     T.validate_opaque_black ? "validate" : "fast",
+                     (unsigned long long)cnt.pixels,
+                     (unsigned long long)cnt.black_checked,
+                     (unsigned long long)cnt.black_mismatches);
+-        if (getenv("RECOMP_VALIDATE_DIFFUSE_TEXTURE_MUL")
+-            && cnt.mul_rc_checked)
++        if (s_xf_validate_diffuse_mul && cnt.mul_rc_checked)
+             fprintf(stderr,
+                     "[DIFFUSE-TEXTURE-MUL] pixels=%llu mismatches=%llu\n",
+                     (unsigned long long)cnt.mul_rc_checked,
+                     (unsigned long long)cnt.mul_rc_mismatches);
+-        if (getenv("RECOMP_VALIDATE_DIFFUSE_PASSTHROUGH")
+-            && cnt.passthrough_checked)
++        if (s_xf_validate_diffuse_passthrough && cnt.passthrough_checked)
+             fprintf(stderr,
+                     "[DIFFUSE-PASSTHROUGH] pixels=%llu mismatches=%llu\n",
+                     (unsigned long long)cnt.passthrough_checked,
+@@ -4746,6 +4746,9 @@
+     static int inited;
+     if (!inited) {
+         inited = 1;
++        s_xf_trace_opaque_black = getenv("RECOMP_OPAQUE_BLACK_TRACE") != NULL;
++        s_xf_validate_diffuse_mul = getenv("RECOMP_VALIDATE_DIFFUSE_TEXTURE_MUL") != NULL;
++        s_xf_validate_diffuse_passthrough = getenv("RECOMP_VALIDATE_DIFFUSE_PASSTHROUGH") != NULL;
+         s_gpu.color_mask = 0x01010101u;           /* all channels, as reset */
+         {
+             int i;

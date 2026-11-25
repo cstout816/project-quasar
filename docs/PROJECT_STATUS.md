@@ -4,6 +4,8 @@
 
 The same Windows AOT build reached the original Mission 00 cockpit on two separate launches. Both runs visibly responded to Hatch and continued updating for at least 60 seconds afterward. The observed rate was about 1 FPS, with visual artifacts. Full startup, driving and campaign completion still need verification.
 
+A native stack sample from the live cockpit found repeated diagnostic-setting lookups in the rasterizer. The settings are now read once at startup. The executor fixture matched all 56,993 covered pixels and preserved the infinite-W texture check in its normal and three diagnostic modes. The in-game performance impact is still being measured.
+
 Each bar counts completed checkpoints from the scope named in that row.
 
 | Area | Progress | Scope |
@@ -11,11 +13,12 @@ Each bar counts completed checkpoints from the scope named in that row.
 | Project | `██░░░░░░ 2/8` | Completed project milestones |
 | AOT | `██ 2/2` | Verified XBE and built native executable |
 | Boot and loading | `████ 4/4` | Title, new pilot, difficulty and first mission frame |
-| First mission validation | `██ 2/2` | Same candidate with visible input and 60 seconds of progression on each launch |
+| Cockpit entry validation | `██ 2/2` | Same candidate with visible Hatch response and 60 seconds of progression on each launch |
+| Successful Mission 00 playthroughs | `░░ 0/2` | Complete original objectives with the same candidate, verify results and saved progression |
 | Rendering | `██░░ 2/4` | Visible intro and cockpit, then clean graphics and validated display enhancements |
 | Controls | `███░ 3/4` | Menu response, startup report tests, live cockpit response and original hardware |
 | Audio | `░ 0/1` | Verified mission audio |
-| Performance | `░ 0/1` | Stable 60 FPS in gameplay |
+| Performance | `░░ 0/2` | 30 FPS at 640×480 in Mission 00, then the longer-term 60 FPS target |
 | Launch and distribution | `░░░ 0/3` | Launcher, clean installation and verified package |
 
 ## Historical checkpoint — r416, 2026-10-30
