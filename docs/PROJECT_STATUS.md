@@ -2,11 +2,13 @@
 
 ## Current checkpoint
 
-The same Windows AOT build reached the original Mission 00 cockpit on two separate launches. Both runs visibly responded to Hatch and continued updating for at least 60 seconds afterward. The observed rate was about 1 FPS, with visual artifacts. A newer build used the mapped Hatch, Ignition, five switches and timed Start to reach the original running HUD and advancing mission clock. Driving and completing the mission still need verification.
+The same Windows AOT build reached the original Mission 00 cockpit on two separate launches. Both runs visibly responded to Hatch and continued updating for at least 60 seconds afterward. The observed rate was about 1 FPS, with visual artifacts. A newer build used the mapped Hatch, Ignition, five switches and timed Start to reach the original running HUD and advancing mission clock. A subsequent run selected first gear, moved and steered using the mapped controls. It received full brake input and later returned to zero speed. Weapons, mission completion and saved progression still need verification.
 
 A native stack sample from the live cockpit found repeated diagnostic-setting lookups in the rasterizer. The settings are now read once at startup. The executor fixture matched all 56,993 covered pixels and preserved the infinite-W texture check in its normal and three diagnostic modes. A 640×480 cold-cockpit sample on the new build measured 1.67 FPS, with a median interval of 601 ms. The 30 FPS target and graphics readability remain open.
 
-Texture-trace setup now happens once at startup. A synthetic 200-quad test using the actual software rasterizer measured a median of 193 ms after the change, compared with 484 ms before. Gameplay performance on this change is still being measured.
+Texture-trace setup now happens once at startup. A synthetic 200-quad test using the actual software rasterizer measured a median of 193 ms after the change, compared with 484 ms before. The next 640×480 sample measured 2.54 FPS in the cold cockpit and 1.64 FPS on the running HUD.
+
+The running game exposed a missing 32-bit indexed draw method. The new candidate passes a raster regression covering valid indices above 65,535 and an out-of-range fetch. The visual impact still needs a mission replay.
 
 Each bar counts completed checkpoints from the scope named in that row.
 
