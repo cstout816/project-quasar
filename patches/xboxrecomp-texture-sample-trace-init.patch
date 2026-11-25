@@ -1,0 +1,67 @@
+diff --git a/src/kernel/nv2a_pb_exec.c b/src/kernel/nv2a_pb_exec.c
+--- a/src/kernel/nv2a_pb_exec.c
++++ b/src/kernel/nv2a_pb_exec.c
+@@ -1254,6 +1254,9 @@
+ }
+ 
++/* Set once before the executor can submit texture work to its raster pool. */
++static int s_texture_sample_trace;
++
+ /* Sample texel (u, v) of stage texture `t`; `face` offsets a cube map. */
+ static int sample_tex(const Texture *t, uint32_t face_offset,
+                       uint32_t u, uint32_t v, uint32_t *argb)
+ {
+@@ -1261,31 +1264,22 @@
+     const uint8_t *p;
+     uint32_t fmt, base = t->offset + face_offset;
+ 
+-    /* Bounded, read-only probe used to identify an invalid texture address
+-     * before the first texel read. It does not add a validity guard or change
+-     * the sampling branch. */
+-    {
+-        static volatile LONG trace_configured;
+-        static volatile LONG trace_enabled;
++    /* Keep the disabled probe free of atomic writes on the sampler hot path. */
++    if (s_texture_sample_trace) {
+         static volatile LONG trace_count;
+         static volatile LONG invalid_count;
+-        if (InterlockedCompareExchange(&trace_configured, 1, 0) == 0)
+-            InterlockedExchange(&trace_enabled,
+-                getenv("RECOMP_TEX_SAMPLE_TRACE") != NULL);
+-        if (trace_enabled) {
+-            LONG n = InterlockedIncrement(&trace_count);
+-            int in_range = xbox_IsXboxAddress((uintptr_t)base);
+-            if (n <= 128 || (!in_range
+-                    && InterlockedIncrement(&invalid_count) <= 128)) {
+-                fprintf(stderr,
+-                    "[TEX-SAMPLE] n=%ld valid=%d in_range=%d base=%08X host=%p "
+-                    "offset=%08X face=%08X size=%ux%u pitch=%u fmt=%08X "
+-                    "uv=%u,%u wrap=%08X,%08X levels=%u filter=%08X cube=%d\n",
+-                    n, t->valid, in_range, base,
+-                    (const void *)(mem + base), t->offset, face_offset,
+-                    t->width, t->height, t->pitch, t->color,
+-                    u, v, t->addr_u, t->addr_v, t->levels, t->filter, t->cube);
+-            }
++        LONG n = InterlockedIncrement(&trace_count);
++        int in_range = xbox_IsXboxAddress((uintptr_t)base);
++        if (n <= 128 || (!in_range
++                && InterlockedIncrement(&invalid_count) <= 128)) {
++            fprintf(stderr,
++                "[TEX-SAMPLE] n=%ld valid=%d in_range=%d base=%08X host=%p "
++                "offset=%08X face=%08X size=%ux%u pitch=%u fmt=%08X "
++                "uv=%u,%u wrap=%08X,%08X levels=%u filter=%08X cube=%d\n",
++                n, t->valid, in_range, base,
++                (const void *)(mem + base), t->offset, face_offset,
++                t->width, t->height, t->pitch, t->color,
++                u, v, t->addr_u, t->addr_v, t->levels, t->filter, t->cube);
+         }
+     }
+ 
+@@ -4746,6 +4740,7 @@
+     static int inited;
+     if (!inited) {
+         inited = 1;
++        s_texture_sample_trace = getenv("RECOMP_TEX_SAMPLE_TRACE") != NULL;
+         s_xf_trace_opaque_black = getenv("RECOMP_OPAQUE_BLACK_TRACE") != NULL;
+         s_xf_validate_diffuse_mul = getenv("RECOMP_VALIDATE_DIFFUSE_TEXTURE_MUL") != NULL;
+         s_xf_validate_diffuse_passthrough = getenv("RECOMP_VALIDATE_DIFFUSE_PASSTHROUGH") != NULL;
