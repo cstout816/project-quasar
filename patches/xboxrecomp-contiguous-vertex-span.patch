@@ -1,0 +1,136 @@
+--- a/src/kernel/xbox_memory_layout.c
++++ b/src/kernel/xbox_memory_layout.c
+@@ -273,4 +273,9 @@
+ {
+     return g_memory_size;
++}
++
++size_t xbox_GetContiguousMappedSize(void)
++{
++    return g_contig_memory ? XBOX_CONTIG_SIZE : 0;
+ }
+
+--- a/src/kernel/xbox_memory_layout.h
++++ b/src/kernel/xbox_memory_layout.h
+@@ -234,4 +234,6 @@
+  * that came out of guest memory rather than from this side. */
+ size_t xbox_GetMappedSize(void);
++/* Bytes mapped in the separate window beginning at XBOX_CONTIG_BASE. */
++size_t xbox_GetContiguousMappedSize(void);
+ void xbox_ProtectMirrorsForDebug(void);
+
+--- a/src/kernel/nv2a_pb_exec.c
++++ b/src/kernel/nv2a_pb_exec.c
+@@ -836,7 +836,15 @@
+         static const uint8_t component_bytes[] = { 0, 2, 4, 0, 1, 2, 0 };
+         uint64_t at = a->offset + (uint64_t)index * a->stride;
+-        size_t limit = s_gpu.inline_active ? (size_t)s_gpu.inline_count * 4
+-                                          : xbox_GetMappedSize();
++        uint64_t limit;
+         size_t bytes;
++
++        /* Keep the entire fetch within the region where the stream starts.
++         * DMA-resolved arrays may use the separate contiguous window. */
++        if (s_gpu.inline_active)
++            limit = (uint64_t)s_gpu.inline_count * 4;
++        else if (a->offset >= XBOX_CONTIG_BASE)
++            limit = (uint64_t)XBOX_CONTIG_BASE + xbox_GetContiguousMappedSize();
++        else
++            limit = xbox_GetMappedSize();
+
+         if (a->type >= sizeof component_bytes)
+@@ -847,5 +855,5 @@
+                 : component_bytes[a->type] * (a->size < 4 ? a->size : 4);
+         if (!bytes || (!s_gpu.inline_active && !a->offset)
+-                || at > limit || bytes > limit - (size_t)at)
++                || at > limit || bytes > limit - at)
+             return 0;
+         p = (s_gpu.inline_active ? (const uint8_t *)s_gpu.inline_buf : mem)
+--- a/tests/nv2a_raster_batch/nv2a_raster_batch_test.c
++++ b/tests/nv2a_raster_batch/nv2a_raster_batch_test.c
+@@ -34,11 +34,14 @@
+ #define MEM_BYTES 0x140000u
+ static uint8_t s_mem[MEM_BYTES];
++static uint8_t *s_guest_base = s_mem;
++static size_t s_contiguous_bytes;
+
+ /* ---- what the executor expects the runtime to provide ------------------ */
+-ptrdiff_t xbox_GetMemoryOffset(void) { return (ptrdiff_t)s_mem; }
++ptrdiff_t xbox_GetMemoryOffset(void) { return (ptrdiff_t)s_guest_base; }
+ uint32_t g_xbox_image_lo, g_xbox_image_hi;
+ uint32_t g_xbox_stack_base, g_xbox_stack_size;
+ size_t xbox_GetMappedSize(void) { return sizeof s_mem; }
+-uint32_t xbox_ContiguousAllocatedBytes(void) { return 0; }
++size_t xbox_GetContiguousMappedSize(void) { return s_contiguous_bytes; }
++uint32_t xbox_ContiguousAllocatedBytes(void) { return (uint32_t)s_contiguous_bytes; }
+ void xbox_ContiguousReservePhysicalRange(uint32_t offset, uint32_t size)
+ { (void)offset; (void)size; }
+@@ -237,4 +240,55 @@
+ }
+
++#ifdef _WIN32
++static int check_contiguous_vertices(void)
++{
++    const uint32_t alias = 0x80000000u, window = 0x2000u, stride = 26;
++    const uint32_t color = 0xFF3679BCu;
++    const uint32_t pixel = COLOR_AT + 4u * (30u * W + 30u);
++    const float vertices[3][3] = {{16, 16, 0}, {100, 16, 0}, {16, 100, 0}};
++    uint8_t *memory = VirtualAlloc(NULL, (size_t)alias + window + 0x1000,
++                                   MEM_RESERVE, PAGE_NOACCESS);
++    uint32_t got = 0, crossing = 0;
++    int i, initialized = 0;
++
++    if (memory && VirtualAlloc(memory, MEM_BYTES, MEM_COMMIT, PAGE_READWRITE)
++        && VirtualAlloc(memory + alias, window, MEM_COMMIT, PAGE_READWRITE)) {
++        s_guest_base = memory;
++        s_contiguous_bytes = window;
++        for (i = 0; i < 3; ++i) {
++            memcpy(memory + alias + 0x1000 + i * stride, vertices[i], 12);
++            memcpy(memory + DIFF_AT + i * 4, &color, 4);
++        }
++        m(0x1720, 0x1000); /* Physical vertex address resolved to the high window. */
++        m(0x1760, 2 | (3 << 4) | (stride << 8));
++        m(0x17FC, 5);
++        m(0x1810, 2u << 24);
++        m(0x17FC, 0);
++        memcpy(&got, memory + pixel, 4);
++
++        memset(memory + COLOR_AT, 0, W * H * 4);
++        for (i = 0; i < 2; ++i)
++            memcpy(memory + alias + window - (2 - i) * stride, vertices[i], 12);
++        m(0x1720, window - 2 * stride);
++        m(0x17FC, 5);
++        m(0x1810, 2u << 24); /* The third vertex starts in an uncommitted page. */
++        m(0x17FC, 0);
++        memcpy(&crossing, memory + pixel, 4);
++        initialized = 1;
++        s_guest_base = s_mem;
++        s_contiguous_bytes = 0;
++    }
++    if (memory)
++        VirtualFree(memory, 0, MEM_RELEASE);
++    if (!initialized || !close_rgb(got, color) || crossing) {
++        printf("Contiguous vertex range: allocated=%d pixel=%08X crossing=%08X\n",
++               initialized, got, crossing);
++        return 0;
++    }
++    puts("Disjoint contiguous vertex stream rendered and its upper bound was enforced");
++    return 1;
++}
++#endif
++
+ int main(void)
+ {
+@@ -301,5 +355,11 @@
+         return 1;
+     }
+-    if (!check_32bit_elements() || !check_unbounded_screen_w())
++    if (!check_32bit_elements())
++        return 1;
++#ifdef _WIN32
++    if (!check_contiguous_vertices())
++        return 1;
++#endif
++    if (!check_unbounded_screen_w())
+         return 1;
+     printf("PASS\n");

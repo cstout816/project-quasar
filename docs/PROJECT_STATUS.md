@@ -16,6 +16,8 @@ A 640×480 sample advanced 38 frames in 14 seconds after engine Start, about 2.7
 
 Three mission state handlers are now present in the AOT dispatch. The installed translations matched original x86 data writes and stack behavior in 12 isolated cases. A live run from the saved pilot also reached both original initialization states. In that run, the display buffer and host copy matched, but the scene was almost entirely white. A separate intermediate surface still held the terrain and the mission timer. The current graphics work traces the vertex data and draws that should produce the final display.
 
+The display trace found that the renderer rejected valid vertex addresses in the Xbox contiguous memory window. The fixed build passed a raster test with separate primary and contiguous regions, including an access past the end of the mapped window. It then restored the cockpit instruments and exterior to the actual 640×480 game window. Visible artifacts and low frame rate remain. The cold cockpit measured 2.54 FPS after the fix, and Mission 00 still needs a complete successful run.
+
 Each bar counts completed checkpoints from the scope named in that row.
 
 | Area | Progress | Scope |
