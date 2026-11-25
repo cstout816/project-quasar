@@ -1,24 +1,69 @@
 diff --git a/src/recomp_manual.c b/src/recomp_manual.c
 --- a/src/recomp_manual.c
 +++ b/src/recomp_manual.c
-@@ -350,6 +350,8 @@
-         return;
+@@ -23,6 +23,7 @@
+ #include <stdlib.h>
+ #include <stddef.h>
+ #include <windows.h>
++#include <intrin.h>
  
-     if (n <= 16) {
+ /* Opt-in, bounded trace for BINK's sub_00244210 object-release path. */
+ extern void xbox_bink_wait_trace_set_target(uint32_t object, uint32_t token);
+@@ -335,20 +336,43 @@
+  * (the ICALL macro pops the dummy return address and continues).
+  * Focus on the ones that cause crashes or incorrect behavior.
+  */
+-void recomp_icall_fail_log(uint32_t va)
+-{
+-    fprintf(stderr, "[ICALL] Failed to resolve VA 0x%08X (total calls: %llu)\n",
+-            va, (unsigned long long)g_icall_count);
+-
+-    /* Dump last 16 call targets from the ring buffer */
+-    fprintf(stderr, "  Recent ICALL targets:\n");
+-    for (int i = 0; i < 16; i++) {
+-        int idx = (g_icall_trace_idx - 16 + i) & 15;
+-        if (g_icall_trace[idx])
+-            fprintf(stderr, "    [%2d] 0x%08X\n", i, g_icall_trace[idx]);
+-    }
+-    fflush(stderr);
+-}
++/* Keep the recurring intro miss separately attributed so earlier misses
++ * cannot consume its first detailed records. All misses still count. */
++__declspec(noinline) void recomp_icall_fail_log(uint32_t va)
++{
++    static volatile LONG64 missed;
++    static volatile LONG64 intro_missed;
++    uint64_t total = (uint64_t)InterlockedIncrement64(&missed);
++    int intro = va == 0x0004AC44u;
++    uint64_t n = intro ? (uint64_t)InterlockedIncrement64(&intro_missed) : total;
++
++    if (n > 16 && (n & (n - 1)) != 0)
++        return;
++
++    if (n <= 16) {
 +        uintptr_t image = (uintptr_t)GetModuleHandleW(NULL);
 +        uintptr_t caller = (uintptr_t)_ReturnAddress();
-         uint32_t sp = g_esp;
-         uint32_t back = 0;
-         SIZE_T read = 0;
-@@ -358,9 +360,9 @@
-                 &back, sizeof back, &read) && read == sizeof back;
-         fprintf(stderr,
-                 "[ICALL] Failed to resolve VA 0x%08X n=%llu total=%llu "
--                "tid=%lu native_return=%p guest_esp=%08X guest_return=%08X valid=%d\n",
++        uint32_t sp = g_esp;
++        uint32_t back = 0;
++        SIZE_T read = 0;
++        BOOL known = ReadProcessMemory(GetCurrentProcess(),
++                (const void *)((uintptr_t)xbox_GetMemoryOffset() + sp),
++                &back, sizeof back, &read) && read == sizeof back;
++        fprintf(stderr,
++                "[ICALL] Failed to resolve VA 0x%08X n=%llu total=%llu "
 +                "tid=%lu native_rva=%llX guest_esp=%08X guest_return=%08X valid=%d\n",
-                 va, (unsigned long long)n, (unsigned long long)total,
--                (unsigned long)GetCurrentThreadId(), _ReturnAddress(),
++                va, (unsigned long long)n, (unsigned long long)total,
 +                (unsigned long)GetCurrentThreadId(), (unsigned long long)(caller - image),
-                 sp, back, (int)known);
-     } else {
-         fprintf(stderr,
++                sp, back, (int)known);
++    } else {
++        fprintf(stderr,
++                "[ICALL-COUNT] group=%s last_va=%08X n=%llu total=%llu\n",
++                intro ? "intro" : "all", va,
++                (unsigned long long)n, (unsigned long long)total);
++    }
++    fflush(stderr);
++}
++
+ 
+ /* An indirect call whose target is not code: a null or wild function pointer.
+  *
