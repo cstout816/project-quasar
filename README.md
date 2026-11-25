@@ -10,7 +10,7 @@
 
 </div>
 
-> **For players:** an experimental Windows build reached the original Mission 00 cockpit twice. Both launches responded to the Hatch control and continued for over a minute. The runs were about 1 FPS and showed rendering artifacts. A playable download, installer and launcher are pending. Please do not send game files.
+> **For players.** The Windows build has reached Mission 00, started the vehicle, and driven using mapped controls. A new pilot also reloaded after restarting the game. Rendering and speed still prevent reliable play, and Mission 00 has yet to be completed. A playable download, installer and launcher are pending.
 
 ## The game and its controller
 
@@ -37,7 +37,7 @@ Two independent screen-gated new-pilot runs used the same native Windows AOT bui
 
 ## Controller compatibility
 
-The original 40-button Steel Battalion controller and pedals are central compatibility targets, alongside keyboard, mouse, gamepad, HOTAS and custom controller profiles. Main Weapon and the left stick have been verified in the original menus, and the mapped Hatch control has been verified in Mission 00. A virtual USB controller test also verified the report fields for Ignition, the startup switches, gears, brake and accelerator. Full startup and physical controller adapters still need gameplay testing.
+The original 40-button Steel Battalion controller and pedals are central compatibility targets, alongside keyboard, mouse, gamepad, HOTAS and custom controller profiles. Mission 00 has accepted Hatch, Ignition, all five startup switches, Start, first gear, acceleration and steering through mapped controls. Targeting and weapon effects still need verification. Physical controller adapters have yet to be tested in gameplay.
 
 ## What you can do here
 
@@ -51,19 +51,19 @@ When a tested release exists, players will need to provide their own legally obt
 
 | Work area | Progress | Current result |
 | --- | --- | --- |
-| Overall project milestones | [#####---------------] 2/8 | Milestone 3 remains active. r519 reached `NOW LOADING`; r521 crashed in the pilot editor and r522 stopped at the title/player-record prompt. No mission frame has been verified. See the [current status index](analysis/CURRENT_STATUS.md). |
+| Overall project milestones | [#####---------------] 2/8 | Boot and compatibility remain active. See the [project status](docs/PROJECT_STATUS.md). |
 | Research and architecture | [####################] 3/3 | Approach and technical limits documented. |
 | XBE analysis and decompilation | [##########----------] 2/4 | XBE parsing and ahead-of-time translation output are available; per-function correctness and complete runtime dependencies are not yet verified. |
 | Initial code translation | [####################] 100% | Translation output exists; correctness is not established by output count. |
 | Windows build | [####################] 100% | A local build completes. |
-| Boot and compatibility | [########------------] 4/5 | r519 reached the Normal mission's `NOW LOADING` screen; no first mission frame is verified. |
-| Loader dependency tracing | [####----------------] 1/5 | r519 recorded resource `0x1E` readiness and a following mode-2 scan with no progress. The blocking dependency remains unknown. |
-| First mission frame | [--------------------] 0/1 | No in-mission framebuffer has been verified. |
-| 60-FPS mission performance | [--------------------] 0/1 | No playable mission frame or gameplay frame-time sample has been verified; startup/loading measurements do not count. |
-| Startup rendering performance | [##########----------] 2/4 | r348's sampled NV2A progress stopped after mode-2 scans; no evidence ties the separate r340 list corruption or older title/loading plateaus to a shared render backlog. |
-| CPU raster throughput | [##########----------] 2/4 | Four workers remain the measured default; a synthetic sweep found no benefit from 8–16 workers. The local clipping fast path and raster regression harness have synthetic-only evidence; mission frame time and 1% lows are unverified. |
+| Boot and compatibility | [################----] 4/5 | Campaign entry, mission loading, cockpit and a pilot reload have been demonstrated. Reliable play remains open. |
+| Mission loading | [####################] 1/1 | AOT ran the intro, loaded the required terrain, and reached the original cockpit. |
+| First mission frame | [####################] 1/1 | Two launches on the same reference build showed the cockpit and Hatch response. Graphics artifacts remain. |
+| Mission 00 completions | [--------------------] 0/2 | Requires two successful runs on one build, the original results, and confirmed saved progression after restart. |
+| Mission performance | [--------------------] 0/2 | Running samples measured 1.64 and 2.71 FPS. The 30 FPS playability target and the later 60 FPS target remain open. |
+| CPU raster throughput | [##########----------] 2/4 | The raster regression fixture and live CPU samples verified costs in diagnostics and pixel shading. Four workers remain the default. |
 | GPU scene rendering | [#####---------------] 1/4 | A narrow splash-render path is verified; general NV2A scene rendering, mission GPU use, and image parity remain unverified. |
-| Virtual controller input | [#############-------] 2/3 | r522 correlated XID/DMA delivery, guest edge handling at `0x004AFC08`, and the title-route branch. The pilot callback path, physical adapter compatibility, and full controller mapping/outputs remain unverified. |
+| Virtual controller input | [#############-------] 2/3 | Menus, startup and basic driving have been exercised. Target lock, weapon effects and physical hardware remain open. |
 | Guest DSP and audio | [█-------------------] 1/2 | r340 captured a `put_pixel` list-field write; r355 logged invalid list nodes but lacks writer/surface correlation. r356 did not reproduce. Audible output and a safe fix are unverified. |
 | Storage and incremental builds | [##################--] 3/4 | Latest targeted audit: candidate history 5.87 GiB and nested historical logs 4.49 GiB allocated; the protected ISO/extracted-data/save floor is 9.85 GiB. r522 recovered no space and added 1.76 MiB of evidence. No whole-workspace rescan was needed; warm build/test caches remain. See the [r522 cleanup manifest](analysis/current-cleanup-manifest-r522-20261031.md). |
 | Campaign, controller, launcher | [--------------------] | Not yet verified or available. |
@@ -86,6 +86,6 @@ The work prioritizes campaign reliability and the original Steel Battalion contr
 
 ## Performance and hardware use
 
-  The runtime uses CPU worker threads for general Xbox graphics rasterization and the RTX 4070 SUPER for presentation and a small, verified GPU-rendered splash draw. A previous runtime log confirms the NVIDIA card was selected. The available synthetic raster test was fastest with 4–6 workers; 8–16 workers did not improve it, so the current 4-worker default stays in place until a repeatable mission benchmark supports changing it. A verified CPU fast path reduced a repeated raster test's median process time by about 1.9%; its effect on game frames is unmeasured. A four-worker matched-save run reached `NOW LOADING` at about 0.56–0.60 guest FPS, but did not show a mission frame. A later six-worker retry froze at the title after 535 flips; per-process GPU 3D samples reached about 25% during startup and fell to 0% while the title was frozen. These startup/loading readings are not gameplay benchmarks. The full scene is not yet GPU-rendered; gameplay GPU utilization or 60 FPS has not been verified.
+The runtime uses CPU workers for general Xbox graphics rasterization. The RTX 4070 SUPER has been verified for presentation and a narrow splash draw. A running Mission 00 sample measured 2.71 FPS at 640×480. The pixel shading routine was active on the two hottest threads at capture. A usable mission view and the 30 FPS target remain the immediate goals.
 
 This independent project is not affiliated with or endorsed by Capcom or Microsoft. Product names and trademarks belong to their respective owners. A Windows release will be considered only after compatibility work and license review.

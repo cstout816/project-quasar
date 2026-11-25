@@ -10,7 +10,11 @@ Texture-trace setup now happens once at startup. A synthetic 200-quad test using
 
 The running game exposed a missing 32-bit indexed draw method. The new candidate passes a raster regression covering valid indices above 65,535 and an out-of-range fetch. The visual impact still needs a mission replay.
 
-A file-layer test reproduced a save defect in which the game wrote a signature over a zeroed pilot body. The fix preserves the body when appending that signature. Tests cover both seek-then-write and explicit offsets, ordinary overwrite, close and the non-FATX path. The game still needs a restart test. The last rendering replay reached the intro, where repeated failed indirect calls coincided with very slow playback. The next build records the caller with bounded output.
+A file-layer test reproduced a save defect in which the game wrote a signature over a zeroed pilot body. The fix preserves the body when appending that signature. Tests cover seek-then-write, explicit offsets, ordinary overwrite, close and the non-FATX path. The game created and reloaded a valid new pilot through Listed Pilot on a separate launch. Progress after a mission win is still open.
+
+A 640×480 sample advanced 38 frames in 14 seconds after engine Start, about 2.71 FPS. The running mission timer and terrain were readable in an intermediate render surface while the displayed frame was almost entirely white. The two hottest sampled threads were executing the rasterizer's pixel shading routine.
+
+Three mission state handlers are now present in the AOT dispatch. The original tables and instruction boundaries were validated, and the installed translations matched original x86 data writes and stack behavior in 12 isolated cases. The fixture uses small test substitutes for external callees. Gameplay verification continues.
 
 Each bar counts completed checkpoints from the scope named in that row.
 

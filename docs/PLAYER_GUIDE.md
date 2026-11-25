@@ -2,7 +2,7 @@
 
 ## Can I play it now?
 
-**The project is still in experimental development.** The same Windows build reached the original Mission 00 cockpit twice. The Hatch control moved the cockpit hatch on both runs, and the game kept updating for over a minute afterward. It ran at about 1 FPS, with visible graphics artifacts. A playable download, installer and launcher are pending.
+**The project is still in experimental development.** The Windows build can enter Mission 00, start the vehicle and drive using mapped controls. It can also reload a newly created pilot. The view and frame rate still need work before the mission can be completed reliably. A playable download, installer and launcher are pending.
 
 Please do not download an unofficial build or expect an ISO to be included here. The project will never distribute the game, its disc image, or its extracted files.
 
