@@ -1,0 +1,235 @@
+diff --git a/src/kernel/kernel_file.c b/src/kernel/kernel_file.c
+--- a/src/kernel/kernel_file.c
++++ b/src/kernel/kernel_file.c
+@@ -135,6 +135,73 @@
+     return xbox_translate_path(xbox_path, win_path, buf_size);
+ }
+ 
++/* FATX title/user data keeps the old clusters when overwriting a file.
++ * A later write beyond zero can make the prefix visible again. In particular,
++ * Steel Battalion writes the pilot body, reopens it and appends its signature.
++ * Delay the Win32 EOF change until the first data operation. */
++#define FATX_PENDING_LIMIT 64
++static SRWLOCK s_fatx_lock = SRWLOCK_INIT;
++static HANDLE s_fatx_pending[FATX_PENDING_LIMIT];
++
++static int fatx_save_path(const char *path)
++{
++    static const char tdata[] = "\\Device\\Harddisk0\\Partition1\\TDATA\\";
++    static const char udata[] = "\\Device\\Harddisk0\\Partition1\\UDATA\\";
++    if (!path)
++        return 0;
++    if (_strnicmp(path, "\\??\\", 4) == 0)
++        path += 4;
++    return _strnicmp(path, "T:\\", 3) == 0 || _strnicmp(path, "U:\\", 3) == 0
++        || _strnicmp(path, tdata, sizeof(tdata) - 1) == 0
++        || _strnicmp(path, udata, sizeof(udata) - 1) == 0;
++}
++
++static int fatx_remember_overwrite(HANDLE handle)
++{
++    unsigned i;
++    AcquireSRWLockExclusive(&s_fatx_lock);
++    for (i = 0; i < FATX_PENDING_LIMIT; ++i) {
++        if (!s_fatx_pending[i]) {
++            s_fatx_pending[i] = handle;
++            break;
++        }
++    }
++    ReleaseSRWLockExclusive(&s_fatx_lock);
++    return i != FATX_PENDING_LIMIT;
++}
++
++static int fatx_has_overwrite(HANDLE handle)
++{
++    unsigned i;
++    if (!handle)
++        return 0;
++    AcquireSRWLockShared(&s_fatx_lock);
++    for (i = 0; i < FATX_PENDING_LIMIT && s_fatx_pending[i] != handle; ++i) {}
++    ReleaseSRWLockShared(&s_fatx_lock);
++    return i != FATX_PENDING_LIMIT;
++}
++
++static int fatx_finish_overwrite(HANDLE handle, LONGLONG end, int closing)
++{
++    unsigned i;
++    BOOL ok = TRUE;
++    FILE_END_OF_FILE_INFO size;
++    if (!handle)
++        return 1;
++    size.EndOfFile.QuadPart = end;
++    AcquireSRWLockExclusive(&s_fatx_lock);
++    for (i = 0; i < FATX_PENDING_LIMIT; ++i) {
++        if (s_fatx_pending[i] != handle)
++            continue;
++        ok = SetFileInformationByHandle(handle, FileEndOfFileInfo, &size, sizeof size);
++        if (ok || closing)
++            s_fatx_pending[i] = NULL;
++        break;
++    }
++    ReleaseSRWLockExclusive(&s_fatx_lock);
++    return ok;
++}
++
+ NTSTATUS __stdcall xbox_NtCreateFile(
+     PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
+     PXBOX_OBJECT_ATTRIBUTES ObjectAttributes, PXBOX_IO_STATUS_BLOCK IoStatusBlock,
+@@ -144,6 +211,8 @@
+     WCHAR win_path[MAX_PATH];
+     HANDLE h;
+     DWORD flags_and_attrs = FILE_ATTRIBUTE_NORMAL;
++    int defer_overwrite;
++    DWORD disposition;
+     (void)AllocationSize;
+ 
+     if (!FileHandle || !ObjectAttributes)
+@@ -189,9 +258,30 @@
+             flags_and_attrs |= FILE_FLAG_NO_BUFFERING;
+         if (FileAttributes & XBOX_FILE_ATTRIBUTE_READONLY)
+             flags_and_attrs |= FILE_ATTRIBUTE_READONLY;
++        defer_overwrite = (CreateDisposition == XBOX_FILE_OVERWRITE
++                           || CreateDisposition == XBOX_FILE_OVERWRITE_IF)
++                       && (DesiredAccess & (XBOX_GENERIC_WRITE | XBOX_GENERIC_ALL
++                                          | XBOX_FILE_WRITE_DATA))
++                       && (CreateOptions & (XBOX_FILE_SYNCHRONOUS_IO_ALERT
++                                          | XBOX_FILE_SYNCHRONOUS_IO_NONALERT))
++                       && fatx_save_path(get_xbox_path(ObjectAttributes));
++        disposition = xbox_disposition_to_win32(CreateDisposition);
++        if (defer_overwrite)
++            disposition = CreateDisposition == XBOX_FILE_OVERWRITE
++                ? OPEN_EXISTING : OPEN_ALWAYS;
+         h = CreateFileW(win_path, xbox_access_to_win32(DesiredAccess),
+             xbox_share_to_win32(ShareAccess), NULL,
+-            xbox_disposition_to_win32(CreateDisposition), flags_and_attrs, NULL);
++            disposition, flags_and_attrs, NULL);
++        if (h != INVALID_HANDLE_VALUE && defer_overwrite
++                && (disposition == OPEN_EXISTING || GetLastError() == ERROR_ALREADY_EXISTS)
++                && !fatx_remember_overwrite(h)) {
++            CloseHandle(h);
++            if (IoStatusBlock) {
++                IoStatusBlock->Status = STATUS_INSUFFICIENT_RESOURCES;
++                IoStatusBlock->Information = 0;
++            }
++            return STATUS_INSUFFICIENT_RESOURCES;
++        }
+     }
+ 
+     if (h == INVALID_HANDLE_VALUE) {
+@@ -242,6 +332,12 @@
+     if (!IoStatusBlock)
+         return STATUS_INVALID_PARAMETER;
+ 
++    if (!fatx_finish_overwrite(FileHandle, 0, 0)) {
++        IoStatusBlock->Status = STATUS_UNSUCCESSFUL;
++        IoStatusBlock->Information = 0;
++        return STATUS_UNSUCCESSFUL;
++    }
++
+     if (ByteOffset && ByteOffset->QuadPart >= 0) {
+         memset(&ov, 0, sizeof(ov));
+         ov.Offset = ByteOffset->LowPart;
+@@ -277,6 +373,8 @@
+     DWORD bytes_written = 0;
+     BOOL result;
+     OVERLAPPED ov;
++    LARGE_INTEGER start = {0}, zero = {0};
++    int pending = fatx_has_overwrite(FileHandle);
+     (void)ApcRoutine; (void)ApcContext;
+ 
+     if (!IoStatusBlock)
+@@ -288,7 +386,22 @@
+         ov.OffsetHigh = ByteOffset->HighPart;
+         result = WriteFile(FileHandle, Buffer, Length, &bytes_written, &ov);
+     } else {
++        if (pending && !SetFilePointerEx(FileHandle, zero, &start, FILE_CURRENT)) {
++            IoStatusBlock->Status = STATUS_UNSUCCESSFUL;
++            IoStatusBlock->Information = 0;
++            return STATUS_UNSUCCESSFUL;
++        }
+         result = WriteFile(FileHandle, Buffer, Length, &bytes_written, NULL);
++    }
++
++    if (result && pending) {
++        LONGLONG off = ByteOffset && ByteOffset->QuadPart >= 0
++                        ? ByteOffset->QuadPart : start.QuadPart;
++        if (!fatx_finish_overwrite(FileHandle, off + bytes_written, 0)) {
++            IoStatusBlock->Status = STATUS_UNSUCCESSFUL;
++            IoStatusBlock->Information = 0;
++            return STATUS_UNSUCCESSFUL;
++        }
+     }
+ 
+     if (result) {
+@@ -309,9 +422,9 @@
+ {
+     XBOX_TRACE(XBOX_LOG_FILE, "NtClose(handle=%p)", Handle);
+     if (Handle && Handle != INVALID_HANDLE_VALUE) {
++        int ok = fatx_finish_overwrite(Handle, 0, 1);
+         xbox_dir_context_drop(Handle);
+-        CloseHandle(Handle);
+-        return STATUS_SUCCESS;
++        return CloseHandle(Handle) && ok ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+     }
+     return STATUS_INVALID_HANDLE;
+ }
+@@ -334,6 +447,11 @@
+     (void)Length;
+     if (!IoStatusBlock || !FileInformation)
+         return STATUS_INVALID_PARAMETER;
++
++    if ((FileInformationClass == XboxFileStandardInformation
++            || FileInformationClass == XboxFileNetworkOpenInformation)
++            && !fatx_finish_overwrite(FileHandle, 0, 0))
++        return STATUS_UNSUCCESSFUL;
+ 
+     switch (FileInformationClass) {
+         case XboxFileBasicInformation: {
+@@ -428,6 +546,12 @@
+         case XboxFileEndOfFileInformation: {
+             PXBOX_FILE_END_OF_FILE_INFORMATION info = (PXBOX_FILE_END_OF_FILE_INFORMATION)FileInformation;
+             LARGE_INTEGER cur, zero = {0};
++            if (fatx_has_overwrite(FileHandle)) {
++                IoStatusBlock->Status = fatx_finish_overwrite(
++                    FileHandle, info->EndOfFile.QuadPart, 0)
++                    ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
++                return IoStatusBlock->Status;
++            }
+             SetFilePointerEx(FileHandle, zero, &cur, FILE_CURRENT);
+             SetFilePointerEx(FileHandle, info->EndOfFile, NULL, FILE_BEGIN);
+             if (!SetEndOfFile(FileHandle)) {
+@@ -455,6 +579,8 @@
+             PXBOX_FILE_END_OF_FILE_INFORMATION info =
+                 (PXBOX_FILE_END_OF_FILE_INFORMATION)FileInformation;
+             FILE_ALLOCATION_INFO fai;
++            if (!fatx_finish_overwrite(FileHandle, 0, 0))
++                return STATUS_UNSUCCESSFUL;
+             fai.AllocationSize = info->EndOfFile;
+             if (!SetFileInformationByHandle(FileHandle, FileAllocationInfo,
+                                             &fai, sizeof(fai))) {
+@@ -540,6 +666,8 @@
+ 
+ NTSTATUS __stdcall xbox_NtFlushBuffersFile(HANDLE FileHandle, PXBOX_IO_STATUS_BLOCK IoStatusBlock)
+ {
++    if (!fatx_finish_overwrite(FileHandle, 0, 0))
++        return STATUS_UNSUCCESSFUL;
+     FlushFileBuffers(FileHandle);
+     if (IoStatusBlock) {
+         IoStatusBlock->Status = STATUS_SUCCESS;
+diff --git a/src/kernel/kernel_bridge.c b/src/kernel/kernel_bridge.c
+--- a/src/kernel/kernel_bridge.c
++++ b/src/kernel/kernel_bridge.c
+@@ -1130,9 +1130,11 @@
+         }
+         if (h && h != INVALID_HANDLE_VALUE) {
+ #ifdef _WIN32
+-            xbox_dir_context_drop(h);
++            g_eax = (uint32_t)xbox_NtClose(h);
++            return;
++#else
++            CloseHandle(h);
+ #endif
+-            CloseHandle(h);
+         }
+     }
+     g_eax = 0; /* STATUS_SUCCESS */

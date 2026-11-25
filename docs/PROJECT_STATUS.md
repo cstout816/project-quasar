@@ -10,6 +10,8 @@ Texture-trace setup now happens once at startup. A synthetic 200-quad test using
 
 The running game exposed a missing 32-bit indexed draw method. The new candidate passes a raster regression covering valid indices above 65,535 and an out-of-range fetch. The visual impact still needs a mission replay.
 
+A file-layer test reproduced a save defect in which the game wrote a signature over a zeroed pilot body. The fix preserves the body when appending that signature. Tests cover both seek-then-write and explicit offsets, ordinary overwrite, close and the non-FATX path. The game still needs a restart test. The last rendering replay reached the intro, where repeated failed indirect calls coincided with very slow playback. The next build records the caller with bounded output.
+
 Each bar counts completed checkpoints from the scope named in that row.
 
 | Area | Progress | Scope |

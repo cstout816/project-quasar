@@ -1,0 +1,24 @@
+diff --git a/src/recomp_manual.c b/src/recomp_manual.c
+--- a/src/recomp_manual.c
++++ b/src/recomp_manual.c
+@@ -350,6 +350,8 @@
+         return;
+ 
+     if (n <= 16) {
++        uintptr_t image = (uintptr_t)GetModuleHandleW(NULL);
++        uintptr_t caller = (uintptr_t)_ReturnAddress();
+         uint32_t sp = g_esp;
+         uint32_t back = 0;
+         SIZE_T read = 0;
+@@ -358,9 +360,9 @@
+                 &back, sizeof back, &read) && read == sizeof back;
+         fprintf(stderr,
+                 "[ICALL] Failed to resolve VA 0x%08X n=%llu total=%llu "
+-                "tid=%lu native_return=%p guest_esp=%08X guest_return=%08X valid=%d\n",
++                "tid=%lu native_rva=%llX guest_esp=%08X guest_return=%08X valid=%d\n",
+                 va, (unsigned long long)n, (unsigned long long)total,
+-                (unsigned long)GetCurrentThreadId(), _ReturnAddress(),
++                (unsigned long)GetCurrentThreadId(), (unsigned long long)(caller - image),
+                 sp, back, (int)known);
+     } else {
+         fprintf(stderr,
