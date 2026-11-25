@@ -1,0 +1,18 @@
+--- a/src/kernel/nv2a_combiner.c
++++ b/src/kernel/nv2a_combiner.c
+@@ -84,6 +84,12 @@
+ {
+     const float *r = R[byte & 0xF];
+-    int i;
+-    for (i = 0; i < 3; i++)
+-        v[i] = map_in((byte & 0x10) ? r[3] : r[i], byte);
++    /* Zero and alpha inputs have the same value in all three lanes. */
++    if (!(byte & 0xF) || (byte & 0x10)) {
++        float value = map_in(r[3], byte);
++        v[0] = v[1] = v[2] = value;
++    } else {
++        v[0] = map_in(r[0], byte);
++        v[1] = map_in(r[1], byte);
++        v[2] = map_in(r[2], byte);
++    }
+ }

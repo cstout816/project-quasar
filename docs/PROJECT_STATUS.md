@@ -18,6 +18,10 @@ Three mission state handlers are now present in the AOT dispatch. The installed 
 
 The display trace found that the renderer rejected valid vertex addresses in the Xbox contiguous memory window. The fixed build passed a raster test with separate primary and contiguous regions, including an access past the end of the mapped window. The retained pilot then loaded into Mission 00, completed the ordinary engine startup sequence, and showed the cockpit instruments, mission timer and terrain in the actual 640×480 game window. The cold cockpit measured 2.54 FPS. The running cockpit measured 2.07 FPS with a 467 ms median frame interval. Visual artifacts remain and the mission has yet to be completed.
 
+The next running-cockpit sample measured 2.21 FPS at 640×480, with a 452 ms median frame interval. The window showed the cockpit, mission timer and terrain. Native samples during the scene reached texture sampling, compressed texture decoding and vertex execution.
+
+The compressed-texture cache now decodes each 4×4 block once per miss. The raster fixture confirmed that an in-place compressed texture change updates the rendered pixels. All 393,216 reference texels matched across DXT1, DXT3 and DXT5. In a synthetic 100,000-block test the median fell from 28.44 to 2.31 ms. The first replay ended at an intermittent title wait, before a mission comparison.
+
 Each bar counts completed checkpoints from the scope named in that row.
 
 | Area | Progress | Scope |

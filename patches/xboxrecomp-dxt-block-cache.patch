@@ -1,0 +1,240 @@
+diff --git a/src/d3d/d3d8_swizzle.h b/src/d3d/d3d8_swizzle.h
+--- a/src/d3d/d3d8_swizzle.h
++++ b/src/d3d/d3d8_swizzle.h
+@@ -323,4 +323,85 @@
+ }
+
++/* Decode the whole 4x4 block from one stable copy of its compressed bytes. */
++static inline int d3d8_dxt_decode_block(const uint8_t *block, uint32_t fmt,
++                                       uint32_t argb[16])
++{
++    uint32_t bytes = d3d8_format_dxt_block_bytes(fmt);
++    const uint8_t *color;
++    uint32_t c[4], selectors, c0, c1, i;
++    int four_colors;
++
++    if (!bytes)
++        return 0;
++    color = block + (bytes - 8u);
++    c0 = (uint32_t)color[0] | ((uint32_t)color[1] << 8);
++    c1 = (uint32_t)color[2] | ((uint32_t)color[3] << 8);
++    selectors = (uint32_t)color[4] | ((uint32_t)color[5] << 8)
++              | ((uint32_t)color[6] << 16) | ((uint32_t)color[7] << 24);
++    four_colors = bytes == 16 || c0 > c1;
++    for (i = 0; i < 2; ++i) {
++        uint32_t rgb = i ? c1 : c0;
++        c[i] = 0xFF000000u
++             | (d3d8_expand_channel((rgb >> 11) & 31u, 5) << 16)
++             | (d3d8_expand_channel((rgb >> 5) & 63u, 6) << 8)
++             | d3d8_expand_channel(rgb & 31u, 5);
++    }
++    c[2] = 0xFF000000u;
++    c[3] = four_colors ? 0xFF000000u : 0;
++    for (i = 0; i < 3; ++i) {
++        uint32_t shift = i * 8u, a = (c[0] >> shift) & 255u, b = (c[1] >> shift) & 255u;
++        if (four_colors) {
++            c[2] |= ((2u * a + b) / 3u) << shift;
++            c[3] |= ((a + 2u * b) / 3u) << shift;
++        } else {
++            c[2] |= ((a + b) / 2u) << shift;
++        }
++    }
++
++    if (fmt == 0x0C) {
++        for (i = 0; i < 16; ++i)
++            argb[i] = c[(selectors >> (2u * i)) & 3u];
++    } else if (fmt == 0x0E) {
++        for (i = 0; i < 16; ++i) {
++            uint32_t nibble = (block[i >> 1] >> ((i & 1u) * 4u)) & 15u;
++            argb[i] = (nibble * 17u << 24) | (c[(selectors >> (2u * i)) & 3u] & 0xFFFFFFu);
++        }
++    } else {
++        uint32_t a[8] = {block[0], block[1]};
++        uint64_t bits = 0;
++        for (i = 0; i < 6; ++i)
++            bits |= (uint64_t)block[2 + i] << (8u * i);
++        if (a[0] > a[1]) {
++            for (i = 1; i < 7; ++i)
++                a[i + 1] = ((7u - i) * a[0] + i * a[1]) / 7u;
++        } else {
++            for (i = 1; i < 5; ++i)
++                a[i + 1] = ((5u - i) * a[0] + i * a[1]) / 5u;
++            a[7] = 255u;
++        }
++        for (i = 0; i < 16; ++i) {
++            uint32_t alpha = a[(bits >> (3u * i)) & 7u];
++            argb[i] = (alpha << 24) | (c[(selectors >> (2u * i)) & 3u] & 0xFFFFFFu);
++        }
++    }
++    return 1;
++}
++
++/* Decode a texel from a block-compressed image. */
++static inline int d3d8_dxt_decode_texel(const uint8_t *base, uint32_t fmt,
++                                        uint32_t u, uint32_t v,
++                                        uint32_t width, uint32_t *argb)
++{
++    uint32_t bytes = d3d8_format_dxt_block_bytes(fmt), blocks_per_row = (width + 3u) / 4u;
++    uint32_t block[16];
++    if (!bytes || !blocks_per_row)
++        return 0;
++    base += ((size_t)(v >> 2) * blocks_per_row + (u >> 2)) * bytes;
++    if (!d3d8_dxt_decode_block(base, fmt, block))
++        return 0;
++    *argb = block[(v & 3u) * 4u + (u & 3u)];
++    return 1;
++}
++
+ /**
+  * Check if an Xbox D3D8 format is swizzled (vs linear/compressed).
+@@ -328,92 +409,4 @@
+  * All other uncompressed formats are swizzled by default.
+  */
+-/* Decode one texel out of a DXT1/DXT3/DXT5 image.
+- *
+- * These are the only formats here that are neither linear nor swizzled: texels
+- * live in 4x4 blocks, so there is no offset to compute and read -- the block
+- * has to be decoded to get at one texel.
+- *
+- * ponytail: decodes the whole 4x4 block for every texel, so a filled triangle
+- * decodes each block up to sixteen times. It is ~20 arithmetic ops on 16 bytes
+- * that are already in L1 from the neighbouring texel, and the menu draws at
+- * 640x480. Cache the last block by index if a textured 3D scene ever runs
+- * through here.
+- */
+-static inline int d3d8_dxt_decode_texel(const uint8_t *base, uint32_t fmt,
+-                                        uint32_t u, uint32_t v,
+-                                        uint32_t width, uint32_t *argb)
+-{
+-    uint32_t block_bytes = d3d8_format_dxt_block_bytes(fmt);
+-    uint32_t blocks_per_row = (width + 3u) / 4u;
+-    const uint8_t *b;
+-    uint32_t bx = u & 3u, by = v & 3u, texel = by * 4u + bx;
+-    uint32_t c[4], idx, alpha = 255u;
+-    uint32_t c0, c1, i;
+-
+-    if (!block_bytes || !blocks_per_row)
+-        return 0;
+-    b = base + ((size_t)(v >> 2) * blocks_per_row + (u >> 2)) * block_bytes;
+-
+-    /* Alpha comes first in DXT3 and DXT5; the colour block follows it. */
+-    if (block_bytes == 16) {
+-        if (fmt == 0x0E) {                 /* DXT3: 4 bits per texel, packed */
+-            uint32_t nib = b[texel >> 1];
+-            alpha = d3d8_expand_channel((texel & 1u) ? (nib >> 4) : (nib & 0x0Fu), 4);
+-        } else {                           /* DXT5: two endpoints + 3-bit index */
+-            uint32_t a0 = b[0], a1 = b[1], a[8], sel;
+-            uint64_t bits = 0;
+-            for (i = 0; i < 6; i++)
+-                bits |= (uint64_t)b[2 + i] << (8 * i);
+-            a[0] = a0; a[1] = a1;
+-            if (a0 > a1)
+-                for (i = 1; i < 7; i++)
+-                    a[i + 1] = ((7 - i) * a0 + i * a1) / 7;
+-            else {
+-                for (i = 1; i < 5; i++)
+-                    a[i + 1] = ((5 - i) * a0 + i * a1) / 5;
+-                a[6] = 0; a[7] = 255;
+-            }
+-            sel = (uint32_t)((bits >> (3 * texel)) & 7u);
+-            alpha = a[sel];
+-        }
+-        b += 8;
+-    }
+-
+-    c0 = (uint32_t)b[0] | ((uint32_t)b[1] << 8);
+-    c1 = (uint32_t)b[2] | ((uint32_t)b[3] << 8);
+-    for (i = 0; i < 2; i++) {
+-        uint32_t rgb = i ? c1 : c0;
+-        c[i] = (d3d8_expand_channel((rgb >> 11) & 0x1Fu, 5) << 16)
+-             | (d3d8_expand_channel((rgb >>  5) & 0x3Fu, 6) <<  8)
+-             |  d3d8_expand_channel( rgb        & 0x1Fu, 5);
+-    }
+-
+-    /* c0 <= c1 selects the three-colour, one-bit-alpha mode -- but only for
+-     * DXT1. DXT3 and DXT5 carry their own alpha, so their colour block is
+-     * always the four-colour form regardless of how the endpoints compare. */
+-    if (c0 > c1 || block_bytes == 16) {
+-        for (i = 0; i < 3; i++) {
+-            uint32_t sh = i * 8, m0 = (c[0] >> sh) & 0xFFu, m1 = (c[1] >> sh) & 0xFFu;
+-            c[2] = (c[2] & ~(0xFFu << sh)) | (((2 * m0 + m1) / 3) << sh);
+-            c[3] = (c[3] & ~(0xFFu << sh)) | (((m0 + 2 * m1) / 3) << sh);
+-        }
+-    } else {
+-        for (i = 0; i < 3; i++) {
+-            uint32_t sh = i * 8, m0 = (c[0] >> sh) & 0xFFu, m1 = (c[1] >> sh) & 0xFFu;
+-            c[2] = (c[2] & ~(0xFFu << sh)) | (((m0 + m1) / 2) << sh);
+-        }
+-        c[3] = 0;                          /* transparent black */
+-    }
+-
+-    idx = ((uint32_t)b[4] | ((uint32_t)b[5] << 8)
+-        | ((uint32_t)b[6] << 16) | ((uint32_t)b[7] << 24)) >> (2 * texel);
+-    idx &= 3u;
+-    if (block_bytes == 8 && c0 <= c1 && idx == 3)
+-        alpha = 0;                         /* DXT1's one bit of alpha */
+-
+-    *argb = (alpha << 24) | (c[idx] & 0x00FFFFFFu);
+-    return 1;
+-}
+-
+ static inline int d3d8_format_is_swizzled(uint32_t fmt)
+ {
+diff --git a/src/kernel/nv2a_pb_exec.c b/src/kernel/nv2a_pb_exec.c
+--- a/src/kernel/nv2a_pb_exec.c
++++ b/src/kernel/nv2a_pb_exec.c
+@@ -1325,9 +1325,5 @@
+         if (cache[slot].key != key || cache[slot].fmt != fmt
+             || cache[slot].raw[0] != raw[0] || cache[slot].raw[1] != raw[1]) {
+-            uint32_t i;
+-            for (i = 0; i < 16; i++)
+-                d3d8_dxt_decode_texel(mem + base, fmt, bx * 4 + (i & 3),
+-                                      by * 4 + (i >> 2), t->width,
+-                                      &cache[slot].px[i]);
++            d3d8_dxt_decode_block((const uint8_t *)raw, fmt, cache[slot].px);
+             cache[slot].key = key;
+             cache[slot].fmt = fmt;
+diff --git a/tests/nv2a_raster_batch/nv2a_raster_batch_test.c b/tests/nv2a_raster_batch/nv2a_raster_batch_test.c
+--- a/tests/nv2a_raster_batch/nv2a_raster_batch_test.c
++++ b/tests/nv2a_raster_batch/nv2a_raster_batch_test.c
+@@ -201,4 +201,33 @@
+ }
+
++static int check_dxt_cache_update(void)
++{
++    enum { TEX_AT = 0x78000 };
++    const uint32_t red = 0xFFFF0000u, blue = 0xFF0000FFu;
++    const uint32_t left = COLOR_AT + 4u * (30u * W + 16u);
++    const uint32_t right = COLOR_AT + 4u * (30u * W + 48u);
++    const uint8_t block[8] = {0x00, 0xF8, 0x1F, 0x00};
++    uint32_t before[2], after[2];
++
++    memcpy(s_mem + TEX_AT, block, sizeof(block));
++    m(0x1B00, TEX_AT);
++    m(0x1B04, (0x0Cu << 8) | (2u << 20) | (2u << 24));
++    draw_textured_quad(1.0f, 0);
++    memcpy(&before[0], s_mem + left, 4);
++    memcpy(&before[1], s_mem + right, 4);
++    memset(s_mem + TEX_AT + 4, 0x55, 4); /* Select the blue endpoint in place. */
++    draw_textured_quad(1.0f, 0);
++    memcpy(&after[0], s_mem + left, 4);
++    memcpy(&after[1], s_mem + right, 4);
++    if (!close_rgb(before[0], red) || !close_rgb(before[1], red)
++        || !close_rgb(after[0], blue) || !close_rgb(after[1], blue)) {
++        printf("DXT cache update: before %08X/%08X after %08X/%08X\n",
++               before[0], before[1], after[0], after[1]);
++        return 0;
++    }
++    puts("DXT cache refreshes after an in-place compressed update");
++    return 1;
++}
++
+ /* 32-bit element words must not be skipped or narrowed to 16 bits. */
+ static int check_32bit_elements(void)
+@@ -361,5 +390,5 @@
+         return 1;
+ #endif
+-    if (!check_unbounded_screen_w())
++    if (!check_unbounded_screen_w() || !check_dxt_cache_update())
+         return 1;
+     printf("PASS\n");
