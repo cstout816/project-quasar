@@ -14,7 +14,7 @@ A file-layer test reproduced a save defect in which the game wrote a signature o
 
 A 640×480 sample advanced 38 frames in 14 seconds after engine Start, about 2.71 FPS. The running mission timer and terrain were readable in an intermediate render surface while the displayed frame was almost entirely white. The two hottest sampled threads were executing the rasterizer's pixel shading routine.
 
-Three mission state handlers are now present in the AOT dispatch. The original tables and instruction boundaries were validated, and the installed translations matched original x86 data writes and stack behavior in 12 isolated cases. The fixture uses small test substitutes for external callees. Gameplay verification continues.
+Three mission state handlers are now present in the AOT dispatch. The installed translations matched original x86 data writes and stack behavior in 12 isolated cases. A live run from the saved pilot also reached both original initialization states. In that run, the display buffer and host copy matched, but the scene was almost entirely white. A separate intermediate surface still held the terrain and the mission timer. The current graphics work traces the vertex data and draws that should produce the final display.
 
 Each bar counts completed checkpoints from the scope named in that row.
 

@@ -1,0 +1,108 @@
+--- a/src/kernel/nv2a_pb_exec.c
++++ b/src/kernel/nv2a_pb_exec.c
+@@ -2024,4 +2024,7 @@
+ static struct { uint32_t offset; float *z; } s_zbufs[4];
+ static int s_ftrace;            /* frame trace: 0 idle, 2 tracing, 3 done */
++enum { FRAME_TRACE_DRAW_LIMIT = 128 };
++static uint32_t s_ftrace_pitch, s_ftrace_draws, s_ftrace_positions;
++static uint32_t s_vertex_attr0_raw, s_vertex_dma_a, s_vertex_dma_b;
+ static int s_zbuf_next;
+
+@@ -3324,4 +3327,16 @@
+             fetch_attr(&s_gpu.attr[a], index, in[a]);
+     }
++    if (s_ftrace_positions) {
++        const VertexAttr *pos = &s_gpu.attr[0];
++        --s_ftrace_positions;
++        fprintf(stderr,
++                "[FTRACE-POS] draw=%u index=%u raw=%08X base=%08X "
++                "dma_a=%08X dma_b=%08X type=%u size=%u stride=%u "
++                "inline=%d input=%a,%a,%a,%a\n",
++                s_gpu.draws, index, s_vertex_attr0_raw, pos->offset,
++                s_vertex_dma_a, s_vertex_dma_b, pos->type, pos->size,
++                pos->stride, s_gpu.inline_active, in[0][0], in[0][1],
++                in[0][2], in[0][3]);
++    }
+     if (s_mission_quad_first_vertex) {
+         s_mission_quad_first_vertex = 0;
+@@ -4170,6 +4185,10 @@
+ {
+     static const char *flag = (const char *)-1;
+-    if (flag == (const char *)-1)
++    if (flag == (const char *)-1) {
++        const char *pitch = getenv("RECOMP_FRAME_TRACE_PITCH");
++        if (pitch)
++            s_ftrace_pitch = (uint32_t)strtoul(pitch, NULL, 0);
+         flag = getenv("RECOMP_FRAME_TRACE");
++    }
+     if (!flag)
+         return;
+@@ -4186,4 +4205,10 @@
+     if (s_ftrace == 2) {
+         s_ftrace = 3;
++        if (s_ftrace_pitch) {
++            uint32_t emitted = s_ftrace_draws < FRAME_TRACE_DRAW_LIMIT
++                             ? s_ftrace_draws : FRAME_TRACE_DRAW_LIMIT;
++            fprintf(stderr, "[FTRACE] pitch=%u draw_matches=%u emitted=%u dropped=%u\n",
++                    s_ftrace_pitch, s_ftrace_draws, emitted, s_ftrace_draws - emitted);
++        }
+         fprintf(stderr, "[FTRACE] end of frame\n");
+         return;
+@@ -4194,7 +4219,18 @@
+             return;
+         fclose(f);
++        s_ftrace_draws = 0;
+         s_ftrace = 2;
+         fprintf(stderr, "[FTRACE] frame begins (flip %u)\n", s_gpu.flips);
+     }
++}
++
++static int frame_trace_draw(void)
++{
++    if (s_ftrace != 2)
++        return 0;
++    if (!s_ftrace_pitch)
++        return 1;
++    return s_gpu.pitch == s_ftrace_pitch
++        && ++s_ftrace_draws <= FRAME_TRACE_DRAW_LIMIT;
+ }
+
+@@ -4230,4 +4266,5 @@
+         static int probe_enabled = -1;
+         static unsigned probe_draws;
++        int trace_draw = frame_trace_draw();
+         uint32_t t0 = s_gpu.tris_drawn;
+         uint64_t p0 = s_gpu.pixels;
+@@ -4248,5 +4285,7 @@
+             ++probe_draws;
+         s_mission_quad_first_vertex = s_mission_quad_probe_active;
++        s_ftrace_positions = trace_draw && s_ftrace_pitch ? 3u : 0u;
+         raster_batch();
++        s_ftrace_positions = 0;
+         s_mission_quad_first_vertex = 0;
+         if (s_mission_quad_probe_active) {
+@@ -4268,5 +4307,5 @@
+         }
+         s_mission_quad_probe_active = 0;
+-        if (s_ftrace == 2) {
++        if (trace_draw) {
+             fprintf(stderr, "[FTRACE] %s prim %u n %u surf %08X %ux%u+%u+%u"
+                     " pitch %u | tex %s %08X %ux%u fmt %02X | blend %u %X/%X"
+@@ -4827,5 +4866,5 @@
+     }
+
+-    if (s_ftrace == 2) {
++    if (s_ftrace == 2 && !s_ftrace_pitch) {
+         /* RECOMP_FRAME_TRACE_METHODS: every method of the traced frame,
+          * less the bulk (vertex data, program and constant uploads). */
+@@ -4846,4 +4885,10 @@
+         return;
+     }
++    if (method == NV097_SET_VERTEX_DATA_ARRAY_OFFSET)
++        s_vertex_attr0_raw = param;
++    else if (method == NV097_SET_CONTEXT_DMA_VERTEX_A)
++        s_vertex_dma_a = param;
++    else if (method == NV097_SET_CONTEXT_DMA_VERTEX_B)
++        s_vertex_dma_b = param;
+     switch (method) {
+     case NV097_SET_CONTEXT_DMA_REPORT:
