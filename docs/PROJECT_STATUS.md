@@ -2,9 +2,9 @@
 
 ## Current checkpoint
 
-The same Windows AOT build reached the original Mission 00 cockpit on two separate launches. Both runs visibly responded to Hatch and continued updating for at least 60 seconds afterward. The observed rate was about 1 FPS, with visual artifacts. Full startup, driving and campaign completion still need verification.
+The same Windows AOT build reached the original Mission 00 cockpit on two separate launches. Both runs visibly responded to Hatch and continued updating for at least 60 seconds afterward. The observed rate was about 1 FPS, with visual artifacts. A newer build reached the original engine-start gauges after Hatch, Ignition and all five mapped startup switches. Starting the engine, driving and completing the mission still need verification.
 
-A native stack sample from the live cockpit found repeated diagnostic-setting lookups in the rasterizer. The settings are now read once at startup. The executor fixture matched all 56,993 covered pixels and preserved the infinite-W texture check in its normal and three diagnostic modes. The in-game performance impact is still being measured.
+A native stack sample from the live cockpit found repeated diagnostic-setting lookups in the rasterizer. The settings are now read once at startup. The executor fixture matched all 56,993 covered pixels and preserved the infinite-W texture check in its normal and three diagnostic modes. A 640×480 cold-cockpit sample on the new build measured 1.67 FPS, with a median interval of 601 ms. The 30 FPS target and graphics readability remain open.
 
 Each bar counts completed checkpoints from the scope named in that row.
 
@@ -16,7 +16,7 @@ Each bar counts completed checkpoints from the scope named in that row.
 | Cockpit entry validation | `██ 2/2` | Same candidate with visible Hatch response and 60 seconds of progression on each launch |
 | Successful Mission 00 playthroughs | `░░ 0/2` | Complete original objectives with the same candidate, verify results and saved progression |
 | Rendering | `██░░ 2/4` | Visible intro and cockpit, then clean graphics and validated display enhancements |
-| Controls | `███░ 3/4` | Menu response, startup report tests, live cockpit response and original hardware |
+| Controls | `████░░░ 4/7` | Menu, Hatch, Ignition, five switches, engine Start, mission controls and original hardware |
 | Audio | `░ 0/1` | Verified mission audio |
 | Performance | `░░ 0/2` | 30 FPS at 640×480 in Mission 00, then the longer-term 60 FPS target |
 | Launch and distribution | `░░░ 0/3` | Launcher, clean installation and verified package |
