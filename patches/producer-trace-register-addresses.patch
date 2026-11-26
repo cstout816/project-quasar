@@ -1,0 +1,29 @@
+--- a/gen/recomp_0015.c
++++ b/gen/recomp_0015.c
+@@ -34840 +34840 @@
+-                        MEM32(nv2a + 0x40u), MEM32(nv2a + 0x44u),
++                        MEM32(nv2a + 0x800040u), MEM32(nv2a + 0x800044u),
+@@ -34904 +34904 @@
+-                MEM32(MEM32(0x21AFE0u) + 0x23C0u + 0x100410u),
++                MEM32(MEM32(MEM32(0x21AFE0u) + 0x23C0u) + 0x100410u),
+@@ -35282,2 +35282,2 @@
+-                    MEM32(edi + 0x14u), MEM32(nv2a + 0x40u),
+-                    MEM32(nv2a + 0x44u), MEM32(nv2a + 0x100410u));
++                    MEM32(edi + 0x14u), MEM32(nv2a + 0x800040u),
++                    MEM32(nv2a + 0x800044u), MEM32(nv2a + 0x100410u));
+@@ -35306,2 +35306,2 @@
+-                MEM32(nv2a + 0x100410u), MEM32(nv2a + 0x40u),
+-                MEM32(nv2a + 0x44u), MEM32(esi + 0x2568u));
++                MEM32(nv2a + 0x100410u), MEM32(nv2a + 0x800040u),
++                MEM32(nv2a + 0x800044u), MEM32(esi + 0x2568u));
+@@ -35337 +35337 @@
+-                MEM32(nv2a + 0x40u), MEM32(nv2a + 0x44u),
++                MEM32(nv2a + 0x800040u), MEM32(nv2a + 0x800044u),
+@@ -35364 +35364 @@
+-                MEM32(nv2a + 0x40u), MEM32(nv2a + 0x44u),
++                MEM32(nv2a + 0x800040u), MEM32(nv2a + 0x800044u),
+@@ -35489,2 +35489,2 @@
+-                        MEM32(device + 0x2568u), MEM32(nv2a + 0x40u),
+-                        MEM32(nv2a + 0x44u), MEM32(nv2a + 0x100410u));
++                        MEM32(device + 0x2568u), MEM32(nv2a + 0x800040u),
++                        MEM32(nv2a + 0x800044u), MEM32(nv2a + 0x100410u));

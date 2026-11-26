@@ -24,6 +24,8 @@ The compressed-texture cache now decodes each 4×4 block once per miss. The rast
 
 A later intro transition crashed when the pushbuffer scanner followed an address beyond mapped physical RAM. The real scanner fixture reproduced the access violation. A bounds check now passes valid subroutine order and four boundary cases, and the incremental build succeeded. Live verification remains open because the next attempts ended in pilot navigation and an intermittent title wait.
 
+A post-intro replay reached a white-frame wait. The captured dispatch gate and guest CPU lock were free. Review also found incorrect register addresses in several marker diagnostics, which could report zero command pointers while work remained pending. Those diagnostic expressions are corrected and pass a native sentinel test. The rebuilt game and emitted records still need verification.
+
 Each bar counts completed checkpoints from the scope named in that row.
 
 | Area | Progress | Scope |
