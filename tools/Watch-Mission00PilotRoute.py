@@ -127,12 +127,12 @@ def route(pid, output, expected_image, max_seconds, confirm_ms=550):
             for attempt in (1, 2):
                 # Retrying requires the exact prior screen. An unexpected
                 # highlight or fade receives no input.
-                if not wait_for(current, 5, stable=.25 if current == "title" else 1.4):
-                    raise RuntimeError(f"Expected {current} after the prior action")
                 if time.monotonic() - last_action < 1.5:
                     time.sleep(1.5 - (time.monotonic() - last_action))
-                if time.monotonic() >= until or observe() != current:
+                if not wait_for(current, 5, stable=.25 if current == "title" else 1.4):
                     raise RuntimeError(f"Lost the {current} input gate")
+                if time.monotonic() >= until:
+                    raise TimeoutError("Route time limit")
                 with (output / "pad-live.txt").open("a", encoding="ascii", newline="") as pad:
                     pad.write(action + "\r\n")
                 last_action = time.monotonic()
