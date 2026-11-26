@@ -1,0 +1,16 @@
+--- a/tools/Build-ProducerTrace.ps1
++++ b/tools/Build-ProducerTrace.ps1
+@@ -49,4 +49,5 @@
+ $usbProject = Join-Path $buildRoot 'xboxrecomp\src\usb\xbox_usb.vcxproj'
+ $apuProject = Join-Path $buildRoot 'xboxrecomp\src\apu\xbox_apu.vcxproj'
++$nv2aProject = Join-Path $buildRoot 'xboxrecomp\src\nv2a\xbox_nv2a.vcxproj'
+ $generatedSource = Join-Path $projectRoot 'iso\local-analysis\xboxrecomp-generated-xpp-untraced-current\gen\recomp_0015.c'
+ $generatedInputSource = Join-Path $projectRoot 'iso\local-analysis\xboxrecomp-generated-xpp-untraced-current\gen\recomp_0001.c'
+@@ -355,4 +356,7 @@
+ & $msbuild $apuProject '/nologo' '/m' '/t:Build' '/p:Configuration=Release' '/p:Platform=x64' '/p:BuildProjectReferences=false' $apuOutDirArg '/v:minimal'
+ if ($LASTEXITCODE -ne 0) { throw "APU trace-library build failed with exit code $LASTEXITCODE" }
++$nv2aOutDirArg = '/p:OutDir=' + (Join-Path $buildRoot 'xboxrecomp\src\nv2a\Release') + '\\'
++& $msbuild $nv2aProject '/nologo' '/m' '/t:Build' '/p:Configuration=Release' '/p:Platform=x64' '/p:BuildProjectReferences=false' $nv2aOutDirArg '/v:minimal'
++if ($LASTEXITCODE -ne 0) { throw "NV2A trace-library build failed with exit code $LASTEXITCODE" }
+ $outDirArg = '/p:OutDir=' + $traceDir + '\\'
+ # Generated diagnostic chunks use bounded fprintf(stderr, ...) probes but do

@@ -21,6 +21,7 @@ int main(void) {
  qemu_mutex_init(&g_nv2a->pgraph.lock);
  qemu_cond_init(&g_nv2a->pgraph.interrupt_cond);
  g_nv2a->pgraph.enabled_interrupts=NV_PGRAPH_INTR_ERROR;
+ g_nv2a->pgraph.regs[NV_PGRAPH_FIFO]=NV_PGRAPH_FIFO_ACCESS;
  g_nv2a->pmc.enabled_interrupts=NV_PMC_INTR_EN_0_HARDWARE;
  asserted=CreateEventA(0,0,0,0);
  nv2a_set_irq_line_callback(irq);
@@ -29,14 +30,21 @@ int main(void) {
  if(WaitForSingleObject(asserted,2000)!=WAIT_OBJECT_0)return 2;
  seen=pgraph_read(g_nv2a,NV_PGRAPH_TRAPPED_DATA_LOW,4);
  if(seen!=5 || WaitForSingleObject(t,0)!=WAIT_TIMEOUT)return 3;
+ pgraph_write(g_nv2a,NV_PGRAPH_FIFO,0,4);
  pgraph_write(g_nv2a,NV_PGRAPH_INTR,NV_PGRAPH_INTR_ERROR,4);
+ if(WaitForSingleObject(t,20)!=WAIT_TIMEOUT) {
+  puts("FAIL notification producer resumed while guest FIFO access was disabled");
+  return 6;
+ }
+ if(pgraph_read(g_nv2a,NV_PGRAPH_TRAPPED_DATA_LOW,4)!=5)return 7;
+ pgraph_write(g_nv2a,NV_PGRAPH_FIFO,NV_PGRAPH_FIFO_ACCESS,4);
  if(WaitForSingleObject(t,2000)!=WAIT_OBJECT_0)return 4;
 
  CloseHandle(t);
  }
  nv2a_pgraph_notify(0,0x100,0);
  if(pgraph_read(g_nv2a,NV_PGRAPH_INTR,4)&NV_PGRAPH_INTR_ERROR)return 5;
- puts("PASS 256 real payload-5 acknowledgement cycles and zero no-op");
+ puts("PASS 256 real payload-5 cycles preserve guest FIFO gate through acknowledgement and zero no-op");
  return 0;
 }
 """)

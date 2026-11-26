@@ -1,0 +1,23 @@
+--- a/src/nv2a/nv2a_core.c
++++ b/src/nv2a/nv2a_core.c
+@@ -591,4 +591,8 @@
+     case NV_PGRAPH_INTR_EN:
+         d->pgraph.enabled_interrupts = (uint32_t)val;
++        break;
++    case NV_PGRAPH_FIFO:
++        d->pgraph.regs[addr] = (uint32_t)val;
++        qemu_cond_broadcast(&d->pgraph.interrupt_cond);
+         break;
+     default:
+@@ -639,7 +643,8 @@
+     nv2a_update_irq(d);
+
+-    /* The NV097 NOP notification is a synchronous software method: the
+-     * command processor stays here until the guest ISR acknowledges PGRAPH. */
+-    while (d->pgraph.pending_interrupts & NV_PGRAPH_INTR_ERROR)
++    /* The ISR acknowledges before dispatching the trapped payload. Preserve
++     * its FIFO access gate until that dispatch has finished. */
++    while ((d->pgraph.pending_interrupts & NV_PGRAPH_INTR_ERROR) ||
++           !(d->pgraph.regs[NV_PGRAPH_FIFO] & NV_PGRAPH_FIFO_ACCESS))
+         qemu_cond_wait(&d->pgraph.interrupt_cond, &d->pgraph.lock);
+     if (getenv("RECOMP_PB_NOTIFY_TRACE")) {
