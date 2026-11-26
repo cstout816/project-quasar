@@ -1,0 +1,208 @@
+diff --git a/src/kernel/nv2a_pb_scan.c b/src/kernel/nv2a_pb_scan.c
+--- a/src/kernel/nv2a_pb_scan.c
++++ b/src/kernel/nv2a_pb_scan.c
+@@ -35,6 +35,8 @@
+
+ extern ptrdiff_t xbox_GetMemoryOffset(void);
++extern size_t xbox_GetContiguousMappedSize(void);
+
+ #define PB_MAX_METHODS 4096
++#define PB_SEGMENT_MAX_BYTES 0x400000u
+
+ /* Preserve each pushbuffer packet boundary for a full PGRAPH consumer. The
+@@ -222,4 +224,24 @@
+ }
+
++static int pb_segment_target_mapped(uint32_t source, uint32_t header,
++                                    uint32_t target, uint32_t mapped_end)
++{
++    static unsigned rejected;
++    if (target >= XBOX_CONTIG_BASE && target < mapped_end)
++        return 1;
++    if (rejected++ < 32u) {
++        fprintf(stderr, "  [PB-SEGMENT-BOUNDS] source=0x%08X header=0x%08X "
++                        "target=0x%08X mapped_end=0x%08X\n",
++                source, header, target, mapped_end);
++    }
++    return 0;
++}
++
++static uint32_t pb_segment_subroutine_end(uint32_t va, uint32_t mapped_end)
++{
++    return mapped_end - va > PB_SEGMENT_MAX_BYTES
++        ? va + PB_SEGMENT_MAX_BYTES : mapped_end;
++}
++
+ /* Walk commands from va to end_va. Returns the words consumed.
+  *
+@@ -233,5 +255,5 @@
+  * followed. Addresses are physical, like PUT's, and reach guest memory the
+  * same way: through the contiguous window. */
+-static uint32_t pb_walk(uint32_t va, uint32_t end_va, int in_call,
++static uint32_t pb_walk(uint32_t va, uint32_t end_va, uint32_t mapped_end, int in_call,
+                         uint32_t *jumps, uint32_t *unknown)
+ {
+@@ -254,6 +276,11 @@
+             if (!in_call)
+                 break;                        /* the ring: a jump ends it */
+-            va = XBOX_CONTIG_BASE | (target & 0x0FFFFFFFu);
+-            end_va = va + 0x400000u;
++            target = XBOX_CONTIG_BASE | (target & 0x0FFFFFFFu);
++            if (!pb_segment_target_mapped(va - 4u, w, target, mapped_end)) {
++                (*unknown)++;
++                break;
++            }
++            va = target;
++            end_va = pb_segment_subroutine_end(va, mapped_end);
+             continue;
+         }
+@@ -266,4 +293,8 @@
+             if (!in_call) {
+                 uint32_t sub = XBOX_CONTIG_BASE | ((w & 0xFFFFFFFCu) & 0x0FFFFFFFu);
++                if (!pb_segment_target_mapped(va - 4u, w, sub, mapped_end)) {
++                    (*unknown)++;
++                    continue;
++                }
+                 if (packet_trace && packet_trace_count++ < 512) {
+                     fprintf(stderr, "  [PB-CALL] at=0x%08X target=0x%08X header=0x%08X\\n",
+@@ -272,5 +303,6 @@
+                 }
+                 s_tot_calls++;
+-                words += pb_walk(sub, sub + 0x400000u, 1, jumps, unknown);
++                words += pb_walk(sub, pb_segment_subroutine_end(sub, mapped_end),
++                                 mapped_end, 1, jumps, unknown);
+             }
+             continue;
+@@ -342,5 +374,5 @@
+ {
+     uint32_t words, jumps = 0, unknown = 0;
+-    uint32_t calls_before;
++    uint32_t calls_before, mapped_end;
+ #if defined(_WIN32)
+     int timing;
+@@ -355,6 +387,10 @@
+     if (!(scan || s_exec_enabled) || end_va <= start_va)
+         return;
+-    if (end_va - start_va > 0x400000u)        /* a sane single-frame bound */
+-        end_va = start_va + 0x400000u;
++    mapped_end = XBOX_CONTIG_BASE + (uint32_t)xbox_GetContiguousMappedSize();
++    if ((start_va | end_va) & 3u || start_va < XBOX_CONTIG_BASE ||
++        end_va > mapped_end)
++        return;
++    if (end_va - start_va > PB_SEGMENT_MAX_BYTES)
++        end_va = start_va + PB_SEGMENT_MAX_BYTES;
+
+     calls_before = s_tot_calls;
+@@ -366,5 +402,5 @@
+     }
+ #endif
+-    words = pb_walk(start_va, end_va, 0, &jumps, &unknown);
++    words = pb_walk(start_va, end_va, mapped_end, 0, &jumps, &unknown);
+
+     if (getenv("RECOMP_PB_TIMING")) {
+diff --git a/tests/nv2a_pb_scan/CMakeLists.txt b/tests/nv2a_pb_scan/CMakeLists.txt
+new file mode 100644
+--- /dev/null
++++ b/tests/nv2a_pb_scan/CMakeLists.txt
+@@ -0,0 +1,6 @@
++cmake_minimum_required(VERSION 3.20)
++project(nv2a_pb_scan_regression C)
++enable_testing()
++add_executable(nv2a-pb-scan-test nv2a_pb_scan_test.c
++    ../../src/kernel/nv2a_pb_scan.c)
++add_test(NAME nv2a-pb-scan COMMAND nv2a-pb-scan-test)
+diff --git a/tests/nv2a_pb_scan/nv2a_pb_scan_test.c b/tests/nv2a_pb_scan/nv2a_pb_scan_test.c
+new file mode 100644
+--- /dev/null
++++ b/tests/nv2a_pb_scan/nv2a_pb_scan_test.c
+@@ -0,0 +1,90 @@
++#include <stddef.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <windows.h>
++
++#define BASE 0x80000000u
++#define LIMIT (64u * 1024u * 1024u)
++#define METHOD (1u << 18 | 0x0100u)
++#define RETURN 0x00020000u
++
++static uint8_t *memory;
++static uint32_t values[8];
++static size_t count;
++
++void nv2a_pb_scan(uint32_t start_va, uint32_t end_va);
++ptrdiff_t xbox_GetMemoryOffset(void) { return (ptrdiff_t)memory; }
++size_t xbox_GetContiguousMappedSize(void) { return LIMIT; }
++void nv2a_pb_exec_report(void) {}
++void nv2a_pb_exec_set_packet_location(uint32_t header) { (void)header; }
++void nv2a_pb_exec_method_at(uint32_t subch, uint32_t method, uint32_t param,
++                           uint32_t header, uint32_t parameter)
++{
++    (void)subch; (void)method; (void)param; (void)header; (void)parameter;
++}
++
++void nv2a_pb_exec_packet(uint32_t subch, uint32_t method,
++                         const uint32_t *params, uint32_t length, int noninc)
++{
++    (void)subch; (void)method; (void)noninc;
++    if (length > sizeof values / sizeof *values - count)
++        abort();
++    memcpy(values + count, params, length * sizeof *params);
++    count += length;
++}
++
++static int expect(const char *label, size_t length, uint32_t a, uint32_t b)
++{
++    int ok = count == length && (length == 0 || values[0] == a)
++                            && (length < 2 || values[1] == b);
++    printf("%s: %s\n", label, ok ? "PASS" : "FAIL");
++    fflush(stdout);
++    count = 0;
++    return ok;
++}
++
++int main(void)
++{
++    uint32_t *ring, *sub, *edge;
++    int ok;
++    _putenv("RECOMP_PB_EXEC=1");
++    memory = VirtualAlloc(NULL, (size_t)BASE + LIMIT, MEM_RESERVE, PAGE_NOACCESS);
++    if (!memory)
++        return 1;
++    ring = VirtualAlloc(memory + BASE, 4096, MEM_COMMIT, PAGE_READWRITE);
++    edge = VirtualAlloc(memory + BASE + LIMIT - 4096, 4096,
++                        MEM_COMMIT, PAGE_READWRITE);
++    if (!ring || !edge)
++        return 1;
++    sub = ring + 64;
++    ring[0] = 0x102u;
++    ring[1] = METHOD;
++    ring[2] = 0x22u;
++    sub[0] = 0x121u; /* JUMP to a valid method within the subroutine. */
++    sub[8] = METHOD;
++    sub[9] = 0x11u;
++    sub[10] = RETURN;
++    nv2a_pb_scan(BASE, BASE + 12);
++    ok = expect("valid CALL, JUMP and RETURN order", 2, 0x11u, 0x22u);
++
++    ring[0] = 0x0C55D596u; /* CALL target matches the c82 fault address. */
++    nv2a_pb_scan(BASE, BASE + 12);
++    ok &= expect("unmapped CALL target", 1, 0x22u, 0);
++
++    ring[0] = 0x102u;
++    sub[0] = 0x0C55D595u;
++    nv2a_pb_scan(BASE, BASE + 12);
++    ok &= expect("unmapped JUMP within CALL", 1, 0x22u, 0);
++
++    ring[0] = (LIMIT - 4u) | 2u;
++    edge[1023] = METHOD; /* Parameter would cross the mapped end. */
++    nv2a_pb_scan(BASE, BASE + 12);
++    ok &= expect("truncated packet at physical end", 1, 0x22u, 0);
++
++    nv2a_pb_scan(BASE + LIMIT, BASE + LIMIT + 8u);
++    ok &= expect("unmapped initial segment", 0, 0, 0);
++    VirtualFree(memory, 0, MEM_RELEASE);
++    return ok ? 0 : 1;
++}

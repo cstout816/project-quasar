@@ -22,6 +22,8 @@ The next running-cockpit sample measured 2.21 FPS at 640×480, with a 452 ms med
 
 The compressed-texture cache now decodes each 4×4 block once per miss. The raster fixture confirmed that an in-place compressed texture change updates the rendered pixels. All 393,216 reference texels matched across DXT1, DXT3 and DXT5. In a synthetic 100,000-block test the median fell from 28.44 to 2.31 ms. The first replay ended at an intermittent title wait, before a mission comparison.
 
+A later intro transition crashed when the pushbuffer scanner followed an address beyond mapped physical RAM. The real scanner fixture reproduced the access violation. A bounds check now passes valid subroutine order and four boundary cases, and the incremental build succeeded. Live verification remains open because the next attempts ended in pilot navigation and an intermittent title wait.
+
 Each bar counts completed checkpoints from the scope named in that row.
 
 | Area | Progress | Scope |
