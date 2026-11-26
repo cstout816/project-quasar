@@ -26,6 +26,8 @@ A later intro transition crashed when the pushbuffer scanner followed an address
 
 A post-intro replay reached a white-frame wait. The captured dispatch gate and guest CPU lock were free. Review also found incorrect register addresses in several marker diagnostics, which could report zero command pointers while work remained pending. Those diagnostic expressions are corrected and pass a native sentinel test. The rebuilt game and emitted records still need verification.
 
+A later startup failure exposed a logging defect. The wait logger used a zero-time host wait to inspect a synchronization event, consuming its signal before the game could wait on it. A synthetic-XBE test through the actual kernel thunk dispatcher reproduced the failure only when tracing was enabled. The corrected logger reads the guest event state. Both traced and untraced tests now pass signal consumption, second-wait timeout and persistent notification-event checks. The game candidate still needs rebuilding and replaying with this correction.
+
 Each bar counts completed checkpoints from the scope named in that row.
 
 | Area | Progress | Scope |

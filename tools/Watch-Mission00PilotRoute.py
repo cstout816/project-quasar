@@ -68,7 +68,7 @@ def screen(frame):
     return None
 
 
-def route(pid, output, expected_image, max_seconds):
+def route(pid, output, expected_image, max_seconds, confirm_ms=550):
     kernel = ct.WinDLL("kernel32", use_last_error=True)
     kernel.OpenProcess.argtypes = (ct.c_uint, ct.c_int, ct.c_uint)
     kernel.OpenProcess.restype = ct.c_void_p
@@ -156,6 +156,8 @@ def route(pid, output, expected_image, max_seconds):
             ("complete", "a:550", None),
         ]
         for current, action, expected in flow:
+            if current != "title" and action.startswith("a:"):
+                action = f"a:{confirm_ms}"
             move(current, action, expected)
     finally:
         kernel.CloseHandle(handle)
@@ -167,5 +169,6 @@ if __name__ == "__main__":
     parser.add_argument("run_directory", type=Path)
     parser.add_argument("expected_image", type=Path)
     parser.add_argument("--seconds", type=int, default=190, choices=range(1, 241), metavar="1-240")
+    parser.add_argument("--confirm-ms", type=int, default=550, choices=range(350, 2501), metavar="350-2500")
     opts = parser.parse_args()
-    route(opts.pid, opts.run_directory, opts.expected_image, opts.seconds)
+    route(opts.pid, opts.run_directory, opts.expected_image, opts.seconds, opts.confirm_ms)

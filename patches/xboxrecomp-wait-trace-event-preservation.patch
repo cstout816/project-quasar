@@ -1,0 +1,105 @@
+diff --git a/src/kernel/kernel_bridge.c b/src/kernel/kernel_bridge.c
+--- a/src/kernel/kernel_bridge.c
++++ b/src/kernel/kernel_bridge.c
+@@ -2204,5 +2204,5 @@
+             n = ++count;
+     }
+-    if (object >= 0x10000u && object < 0x04000000u) {
++    if (type >= 0 || (object >= 0x10000u && object < 0x04000000u)) {
+         header = BRIDGE_MEM32(object);
+         signal = BRIDGE_MEM32(object + 4);
+@@ -2223,5 +2223,9 @@
+     SetLastError(0);
+     valid = h && GetHandleInformation(h, &flags);
+-    state = h ? WaitForSingleObject(h, 0) : WAIT_FAILED;
++    /* A zero-time host wait consumes a synchronization event's signal.
++     * Report the guest header snapshot for known events. Unknown handle
++     * kinds have no sampled state, represented by WAIT_FAILED. */
++    state = type >= 0
++          ? (signal ? WAIT_OBJECT_0 : WAIT_TIMEOUT) : WAIT_FAILED;
+     f = fopen(path, "a");
+     if (!f)
+diff --git a/tests/memory_regressions/test_main.c b/tests/memory_regressions/test_main.c
+--- a/tests/memory_regressions/test_main.c
++++ b/tests/memory_regressions/test_main.c
+@@ -83,5 +83,6 @@
+     S_ALLOC, S_FREE, S_QUERY, S_CONTIG, S_THREAD, S_DPC_INSERT,
+     S_THREAD_REF, S_THREAD_SET_PRIORITY, S_THREAD_QUERY_PRIORITY,
+-    S_THREAD_TERMINATE, S_CS_ENTER, S_CS_LEAVE, S_SUSPEND, S_RESUME, N_SLOTS
++    S_THREAD_TERMINATE, S_CS_ENTER, S_CS_LEAVE, S_SUSPEND, S_RESUME,
++    S_EVENT_WAIT, N_SLOTS
+ };
+ static const uint32_t ORD[N_SLOTS] = {
+@@ -100,4 +101,5 @@
+     231,   /* NtSuspendThread */
+     224,   /* NtResumeThread */
++    159,   /* KeWaitForSingleObject */
+ };
+
+@@ -538,4 +540,6 @@
+     int inline_entry_cpu = !strcmp(mode, "inline-entry-cpu");
+     int lock_owner_suspend = !strcmp(mode, "lock-owner-suspend");
++    int event_observer = !strcmp(mode, "event-observer") ||
++                         !strcmp(mode, "event-observer-trace");
+     int ext128 = !strcmp(mode, "ext-vma-128");
+     int ext = ext128 || !strcmp(mode, "ext-vma");
+@@ -549,5 +553,5 @@
+     if (!reclaim && !ext && !thread_stack_gap && !dpc_enqueue_trace &&
+         !thread_object_priority && !thread_exit_handoff && !inline_entry_cpu &&
+-        !lock_owner_suspend &&
++        !lock_owner_suspend && !event_observer &&
+         strcmp(mode, "default")) {
+         printf("unknown mode '%s'\n", mode);
+@@ -567,4 +571,9 @@
+     if (dpc_enqueue_trace)
+         set_env("RECOMP_DPC_CALL_TRACE", "1");
++    if (event_observer) {
++        set_env("RECOMP_TITLE_KEVENTS", "1");
++        set_env("RECOMP_WAIT_TRACE_LOG",
++                !strcmp(mode, "event-observer-trace") && argc > 3 ? argv[3] : "");
++    }
+     if (thread_object_priority)
+         set_env("RECOMP_GUEST_LOCK", "0");
+@@ -601,4 +610,27 @@
+     }
+     printf("mode: %s\n", mode);
++    if (event_observer) {
++        uint32_t event = OUT_VA + 0x400u, timeout = OUT_VA + 0x800u;
++        uint32_t args[5] = { event, 0, 0, 0, timeout };
++        memset(G(event), 0, 16);
++        memset(G(timeout), 0, 8);
++        *G(event) = 0x00040001u; /* Signaled synchronization event. */
++        *G(event + 4) = 1;
++        check(call(S_EVENT_WAIT, 5, args) == 0,
++              "a traced signaled synchronization event satisfies its real wait", NULL);
++        check(*G(event + 4) == 0,
++              "the real synchronization wait consumes the guest signal", NULL);
++        check(call(S_EVENT_WAIT, 5, args) == 0x102u,
++              "a second synchronization wait times out", NULL);
++        event += 0x20u;
++        args[0] = event;
++        memset(G(event), 0, 16);
++        *G(event) = 0x00040000u; /* Signaled notification event. */
++        *G(event + 4) = 1;
++        check(call(S_EVENT_WAIT, 5, args) == 0 &&
++              call(S_EVENT_WAIT, 5, args) == 0,
++              "notification events remain signaled across both waits", NULL);
++        return failures ? 1 : 0;
++    }
+ #if defined(_WIN32)
+     if (dpc_enqueue_trace)
+diff --git a/tests/memory_regressions/CMakeLists.txt b/tests/memory_regressions/CMakeLists.txt
+--- a/tests/memory_regressions/CMakeLists.txt
++++ b/tests/memory_regressions/CMakeLists.txt
+@@ -14,4 +14,11 @@
+
+ set(XBE ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/conformance/test.xbe)
++if(WIN32)
++    add_test(NAME memory_regressions_event_observer
++        COMMAND memory_regressions_test event-observer ${XBE})
++    add_test(NAME memory_regressions_event_observer_trace
++        COMMAND memory_regressions_test event-observer-trace ${XBE}
++                ${CMAKE_CURRENT_BINARY_DIR}/event-observer-wait.log)
++endif()
+ # One process per mode: the switches are read once and cached, so they cannot be
+ # flipped inside a run.
