@@ -1,0 +1,41 @@
+--- a/src/kernel/nv2a_vsh_interp.c
++++ b/src/kernel/nv2a_vsh_interp.c
+@@ -324,6 +324,14 @@
+ 
+ int nv2a_vsh_run(const float in[NV2A_VSH_INPUTS][4], Nv2aVshOutput *out)
+ {
++    enum { SOURCE_B = 1, SOURCE_C = 2 };
++    /* Every active MAC reads A. Only the binary and ternary ops also
++     * read B or C. A paired ILU always reads C before any writes. */
++    static const uint8_t mac_extra_sources[16] = {
++        0, 0, SOURCE_B, SOURCE_C, SOURCE_B | SOURCE_C,
++        SOURCE_B, SOURCE_B, SOURCE_B, SOURCE_B, SOURCE_B,
++        SOURCE_B, SOURCE_B, SOURCE_B, 0, 0, 0
++    };
+     static int dump = -1;
+     static uint32_t dumped[16];
+     static int ndumped;
+@@ -367,13 +375,19 @@
+         uint32_t mac_mask = field(ins, 3, 24, 4), ilu_mask = field(ins, 3, 16, 4);
+         uint32_t tdst = field(ins, 3, 20, 4);
+         uint32_t omask = field(ins, 3, 12, 4), oaddr = field(ins, 3, 3, 8);
+-        vec4 a = read_src(ins, 0, in, temp, &opos, a0);
+-        vec4 b = read_src(ins, 1, in, temp, &opos, a0);
+-        vec4 c = read_src(ins, 2, in, temp, &opos, a0);
++        uint32_t sources = mac_extra_sources[mac];
++        vec4 c = {{0, 0, 0, 0}};
+         vec4 mres = {{0, 0, 0, 0}}, ires = {{0, 0, 0, 0}};
+ 
+-        if (mac)
++        if (ilu || (sources & SOURCE_C))
++            c = read_src(ins, 2, in, temp, &opos, a0);
++        if (mac) {
++            vec4 a = read_src(ins, 0, in, temp, &opos, a0);
++            vec4 b = {{0, 0, 0, 0}};
++            if (sources & SOURCE_B)
++                b = read_src(ins, 1, in, temp, &opos, a0);
+             mres = run_mac(mac, a, b, c, &a0);
++        }
+         if (ilu)
+             ires = run_ilu(ilu, c);
+ 

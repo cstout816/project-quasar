@@ -1,0 +1,191 @@
+--- a/src/kernel/nv2a_vsh_interp.c
++++ b/src/kernel/nv2a_vsh_interp.c
+@@ -322,16 +322,37 @@
+     return r;
+ }
+ 
++enum { SOURCE_B = 1, SOURCE_C = 2 };
++/* Every active MAC reads A. Only the binary and ternary ops also
++ * read B or C. A paired ILU always reads C before any writes. */
++static const uint8_t mac_extra_sources[16] = {
++    0, 0, SOURCE_B, SOURCE_C, SOURCE_B | SOURCE_C,
++    SOURCE_B, SOURCE_B, SOURCE_B, SOURCE_B, SOURCE_B,
++    SOURCE_B, SOURCE_B, SOURCE_B, 0, 0, 0
++};
++
++uint32_t nv2a_vsh_input_mask(void)
++{
++    uint32_t mask = 0, slot;
++
++    for (slot = s_start_slot; slot < NV2A_VSH_SLOTS; ++slot) {
++        const uint32_t *ins = s_program[slot];
++        uint32_t mac = field(ins, 1, 21, 4), ilu = field(ins, 1, 25, 3);
++        uint32_t sources = mac_extra_sources[mac];
++
++        /* All three operand muxes share the instruction's input index. */
++        if ((mac && field(ins, 2, 26, 2) == 2)
++            || ((sources & SOURCE_B) && field(ins, 2, 11, 2) == 2)
++            || ((ilu || (sources & SOURCE_C)) && field(ins, 3, 28, 2) == 2))
++            mask |= 1u << field(ins, 1, 9, 4);
++        if (field(ins, 3, 0, 1))
++            break;
++    }
++    return mask;
++}
++
+ int nv2a_vsh_run(const float in[NV2A_VSH_INPUTS][4], Nv2aVshOutput *out)
+ {
+-    enum { SOURCE_B = 1, SOURCE_C = 2 };
+-    /* Every active MAC reads A. Only the binary and ternary ops also
+-     * read B or C. A paired ILU always reads C before any writes. */
+-    static const uint8_t mac_extra_sources[16] = {
+-        0, 0, SOURCE_B, SOURCE_C, SOURCE_B | SOURCE_C,
+-        SOURCE_B, SOURCE_B, SOURCE_B, SOURCE_B, SOURCE_B,
+-        SOURCE_B, SOURCE_B, SOURCE_B, 0, 0, 0
+-    };
+     static int dump = -1;
+     static uint32_t dumped[16];
+     static int ndumped;
+--- a/src/kernel/nv2a_vsh_interp.h
++++ b/src/kernel/nv2a_vsh_interp.h
+@@ -44,8 +44,11 @@
+ void nv2a_vsh_constant_word(uint32_t word);           /* _CONSTANT(i)       */
+ void nv2a_vsh_set_cxt_write(uint32_t enable);         /* _CXT_WRITE_EN      */
+ 
+-/* Run the program from the start slot on one vertex. Inputs are the ten
+- * attribute values as floats. Returns 0 if there is no program to run (no
++/* Inputs read by the current program, starting at the active slot. */
++uint32_t nv2a_vsh_input_mask(void);
++
++/* Run the program from the start slot on one vertex. Initialize the
++ * attribute values identified by nv2a_vsh_input_mask(). Returns 0 if there is no program to run (no
+  * FINAL flag within program memory), which the caller treats as "cannot
+  * transform this batch" rather than drawing garbage. */
+ int  nv2a_vsh_run(const float in[NV2A_VSH_INPUTS][4], Nv2aVshOutput *out);
+--- a/src/kernel/nv2a_pb_exec.c
++++ b/src/kernel/nv2a_pb_exec.c
+@@ -3316,12 +3316,20 @@
+ 
+ static Nv2aVshOutput s_xf[NV_MAX_INDICES];
+ 
+-static int transform_vertex(uint32_t index, Nv2aVshOutput *out)
++static int transform_vertex(uint32_t index, uint32_t input_mask, Nv2aVshOutput *out)
+ {
+     float in[NV2A_VSH_INPUTS][4];
+     uint32_t a;
+ 
+-    for (a = 0; a < NV2A_VSH_INPUTS; a++) {
++    /* The bounded vertex traces also read attributes the program may omit. */
++    if (s_ftrace_positions)
++        input_mask |= 1u;
++    if (s_mission_quad_first_vertex)
++        input_mask = (1u << NV2A_VSH_INPUTS) - 1u;
++
++    for (a = 0; input_mask; ++a, input_mask >>= 1) {
++        if (!(input_mask & 1u))
++            continue;
+         /* An attribute with no array reads its current value, which is set by
+          * SET_VERTEX_DATA* methods. XboxRecomp upstream PR #210 corrected this
+          * hardware behavior; use the same state already tracked by this executor. */
+@@ -3850,6 +3858,7 @@
+ static void raster_batch_program(void)
+ {
+     uint32_t i, n = s_gpu.idx_count;
++    uint32_t input_mask;
+     uint32_t tris_before = s_gpu.tris_drawn;
+ #if defined(_WIN32)
+     LARGE_INTEGER timing_start = { 0 };
+@@ -3937,8 +3946,9 @@
+ } while (0)
+ #endif
+ 
++    input_mask = nv2a_vsh_input_mask();
+     for (i = 0; i < n; i++)
+-        if (!transform_vertex(s_gpu.idx[i], &s_xf[i])) {
++        if (!transform_vertex(s_gpu.idx[i], input_mask, &s_xf[i])) {
+ #if defined(_WIN32)
+             REPORT_BATCH_TIME("transform-failed");
+ #endif
+--- a/tests/nv2a_vsh/nv2a_vsh_test.c
++++ b/tests/nv2a_vsh/nv2a_vsh_test.c
+@@ -10,6 +10,7 @@
+ #include "nv2a_vsh_interp.h"
+ #include <math.h>
+ #include <stdio.h>
++#include <string.h>
+ 
+ enum { T = 1, V = 2, C = 3 };             /* source mux */
+ #define XYZW 0x1B                         /* swizzle x,y,z,w */
+@@ -21,6 +22,63 @@
+     if (which == 0) { w[1] |= swz; w[2] |= (mux << 26) | (reg << 28); }
+     else if (which == 1) { w[2] |= (swz << 17) | (mux << 11) | (reg << 13); }
+     else { w[2] |= (swz << 2) | (reg >> 2); w[3] |= (mux << 28) | ((reg & 3) << 30); }
++}
++
++static int check_input_mask(void)
++{
++    float full[NV2A_VSH_INPUTS][4], skipped[NV2A_VSH_INPUTS][4];
++    Nv2aVshOutput a, b;
++    unsigned mac, ilu, muxes, v, c, output_ilu;
++    const unsigned slot = 10;
++
++    for (v = 0; v < NV2A_VSH_INPUTS; ++v)
++        for (c = 0; c < 4; ++c)
++            full[v][c] = (float)(v + c + 1) / 16.0f;
++
++    /* A different input before and after the active FINAL must be ignored. */
++    {
++        uint32_t other[4] = {0};
++        other[1] = (1u << 21) | (14u << 9);
++        src(other, 0, V, 0, XYZW);
++        nv2a_vsh_set_instruction(slot - 1, other);
++        nv2a_vsh_set_instruction(slot + 1, other);
++    }
++    nv2a_vsh_set_start_slot(slot);
++    for (mac = 0; mac < 16; ++mac)
++        for (ilu = 0; ilu < 8; ++ilu)
++            for (muxes = 0; muxes < 8; ++muxes)
++                for (output_ilu = 0; output_ilu < 2; ++output_ilu) {
++                    uint32_t ins[4] = {0};
++                    unsigned input = (mac + ilu + muxes) % NV2A_VSH_INPUTS;
++                    uint32_t expected, mask;
++                    int reads_input = (mac && (muxes & 1))
++                        || ((mac == 2 || (mac >= 4 && mac <= 12)) && (muxes & 2))
++                        || ((ilu || mac == 3 || mac == 4) && (muxes & 4));
++
++                    ins[1] = (mac << 21) | (ilu << 25) | (input << 9);
++                    src(ins, 0, muxes & 1 ? V : T, 0, XYZW);
++                    src(ins, 1, muxes & 2 ? V : T, 0, XYZW);
++                    src(ins, 2, muxes & 4 ? V : T, 0, XYZW);
++                    ins[3] |= (15u << 12) | (1u << 11) | (output_ilu << 2) | 1u;
++                    nv2a_vsh_set_instruction(slot, ins);
++                    expected = reads_input ? 1u << input : 0;
++                    mask = nv2a_vsh_input_mask();
++
++                    memset(skipped, 0, sizeof skipped);
++                    for (v = 0; v < NV2A_VSH_INPUTS; ++v)
++                        if (mask & (1u << v))
++                            memcpy(skipped[v], full[v], sizeof skipped[v]);
++                    if (mask != expected
++                        || !nv2a_vsh_run((const float (*)[4])full, &a)
++                        || !nv2a_vsh_run((const float (*)[4])skipped, &b)
++                        || memcmp(&a, &b, sizeof a) != 0) {
++                        printf("FAIL: input mask MAC=%u ILU=%u muxes=%u output_ilu=%u mask=%04X expected=%04X\n",
++                               mac, ilu, muxes, output_ilu, mask, expected);
++                        return 0;
++                    }
++                }
++    puts("ok: 2048 input mask and output comparisons");
++    return 1;
+ }
+ 
+ int main(void)
+@@ -63,6 +121,6 @@
+                o.pos[0], o.pos[1], o.pos[2], o.pos[3]);
+         return 1;
+     }
+-    puts("ok");
+-    return 0;
++    puts("ok: paired screen-space epilogue");
++    return check_input_mask() ? 0 : 1;
+ }

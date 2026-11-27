@@ -26,6 +26,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "nv2a_state.h"
+#include "nv2a_vsh_interp.h"
+#include "xbox_memory_layout.h"
 
 #define W 256
 #define H 256
@@ -40,6 +42,11 @@ ptrdiff_t xbox_GetMemoryOffset(void) { return (ptrdiff_t)s_mem; }
 uint32_t g_xbox_image_lo, g_xbox_image_hi;
 uint32_t g_xbox_stack_base, g_xbox_stack_size;
 uint32_t xbox_ContiguousAllocatedBytes(void) { return 0; }
+size_t xbox_GetMappedSize(void) { return sizeof s_mem; }
+size_t xbox_GetContiguousMappedSize(void) { return 0; }
+BOOL xbox_IsXboxAddress(uintptr_t address) { return address < sizeof s_mem; }
+void xbox_ContiguousReservePhysicalRange(uint32_t offset, uint32_t size)
+{ (void)offset; (void)size; }
 void xbox_FramebufferWindowSet(uint32_t va, uint32_t pitch) { (void)va; (void)pitch; }
 void xbox_FramebufferWindowSetAA(uint32_t sy) { (void)sy; }
 uint32_t xbox_Nv2aFenceWordVa(void) { return 0; }
@@ -114,13 +121,14 @@ static void put_vertex(uint32_t n, float x, float y, uint32_t c)
     memcpy(s_mem + DIFF_AT + 4u * n, &c, 4);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     static const float I[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
     uint32_t n = 0, start;
     const char *repeat_env = getenv("RECOMP_RASTER_TEST_REPEATS");
     int repeats = repeat_env ? atoi(repeat_env) : 1;
     int i, x, y, bad = 0, drawn = 0;
+    int program = argc == 2 && strcmp(argv[1], "program") == 0;
 
     if (repeats < 1)
         repeats = 1;
@@ -142,7 +150,18 @@ int main(void)
     m(0x0210, COLOR_AT);                     /* SET_SURFACE_COLOR_OFFSET */
     for (i = 0; i < 16; i++)
         mf(0x0680 + 4 * i, I[i]);            /* composite: positions are pixels */
-    m(0x1E94, 0);                            /* TRANSFORM_EXECUTION_MODE: fixed */
+    if (program) {
+        /* mov oPos, v0; mov oD0, v3.zyxw; final. Swapping red and blue
+         * makes a fixed-function fallback fail the pixel check. */
+        const uint32_t position[4] = {0, (1u << 21) | 0x1Bu, 2u << 26, 0xF800u};
+        const uint32_t diffuse[4] = {0, (1u << 21) | (3u << 9) | 0x93u,
+                                     2u << 26, 0xF800u | (3u << 3) | 1u};
+        nv2a_vsh_set_instruction(0, position);
+        nv2a_vsh_set_instruction(1, diffuse);
+        m(0x1E94, 2);                        /* TRANSFORM_EXECUTION_MODE: program */
+    } else {
+        m(0x1E94, 0);                        /* TRANSFORM_EXECUTION_MODE: fixed */
+    }
 
     /* Quads with integer corners, overlapping heavily, two triangles each,
      * both wound the same way. */
@@ -176,6 +195,9 @@ int main(void)
             for (i = 0; i < QUADS; i++)
                 if (x >= qx0[i] && x < qx1[i] && y >= qy0[i] && y < qy1[i])
                     want = qc[i];
+            if (program)
+                want = (want & 0xFF00FF00u) | ((want & 0xFFu) << 16)
+                     | ((want >> 16) & 0xFFu);
             if (want)
                 drawn++;
             if (want ? !close_rgb(got, want) : (got & 0xFFFFFFu) != 0) {
