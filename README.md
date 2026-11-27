@@ -10,7 +10,7 @@
 
 </div>
 
-> **For players.** The Windows build has reached Mission 00, started the vehicle, and driven using mapped controls. A new pilot also reloaded after restarting the game. Rendering and speed still prevent reliable play, and Mission 00 has yet to be completed. A playable download, installer and launcher are pending.
+> **For players.** The Windows build has reached Mission 00, started the vehicle, and driven using mapped controls. A new pilot also reloaded after restarting the game. Rendering and speed still prevent reliable play, and Mission 00 has yet to be completed. The Windows launcher can be built from source for setup and controller preview. A playable download and a launcher-compatible game runtime are pending. [Launcher guide](docs/LAUNCHER.md)
 
 ## The game and its controller
 
@@ -45,7 +45,7 @@ The original 40-button Steel Battalion controller and pedals are central compati
 - **Follow the technical work:** see [research and architecture](docs/milestone-1-research.md) and the [audio DSP integration plan](docs/audio-dsp-integration-plan.md).
 - **Share community knowledge:** visit [Steel Battalion Online on Reddit](https://www.reddit.com/r/steelbattaliononline/) or the [community Discord](https://discord.gg/steelbattalion).
 
-When a tested release exists, players will need to provide their own legally obtained game copy. This repository will not include the ISO, XBE, extracted game code, textures, audio, or cinematics. The planned launcher may offer an option to add the game to Steam as a non-Steam shortcut; it will not grant a Steam store license.
+When a tested release exists, players will need to provide their own legally obtained game copy. This repository will not include the ISO, XBE, extracted game code, textures, audio, or cinematics. A future launcher version may offer an option to add the game to Steam as a non-Steam shortcut.
 
 ## Progress at a glance
 
@@ -66,7 +66,7 @@ When a tested release exists, players will need to provide their own legally obt
 | Virtual controller input | [#############-------] 2/3 | Menus, startup and basic driving have been exercised. Target lock, weapon effects and physical hardware remain open. |
 | Guest DSP and audio | [█-------------------] 1/2 | r340 captured a `put_pixel` list-field write; r355 logged invalid list nodes but lacks writer/surface correlation. r356 did not reproduce. Audible output and a safe fix are unverified. |
 | Storage and incremental builds | [##################--] 3/4 | Latest targeted audit: candidate history 5.87 GiB and nested historical logs 4.49 GiB allocated; the protected ISO/extracted-data/save floor is 9.85 GiB. r522 recovered no space and added 1.76 MiB of evidence. No whole-workspace rescan was needed; warm build/test caches remain. See the [r522 cleanup manifest](analysis/current-cleanup-manifest-r522-20261031.md). |
-| Campaign, controller, launcher | [--------------------] | Not yet verified or available. |
+| Campaign, controller, launcher | — | Launcher setup and controller preview are available from source. Gameplay, runtime handoff to the game and physical controller verification are pending. |
 
 These bars describe engineering work, not playable features or campaign completion. See the [detailed tracker](docs/DEVELOPMENT_STATUS.md) for field-by-field evidence.
 

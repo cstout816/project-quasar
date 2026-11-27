@@ -2,7 +2,7 @@
 
 ## Can I play it now?
 
-**The project is still in experimental development.** The Windows build can enter Mission 00, start the vehicle and drive using mapped controls. It can also reload a newly created pilot. The view and frame rate still need work before the mission can be completed reliably. A playable download, installer and launcher are pending.
+**The project is still in experimental development.** The Windows build can enter Mission 00, start the vehicle and drive using mapped controls. It can also reload a newly created pilot. The view and frame rate still need work before the mission can be completed reliably. The Windows launcher can be built from source for setup and controller preview. Play requires a compatible game runtime, which is still pending. [Launcher guide](LAUNCHER.md)
 
 Please do not download an unofficial build or expect an ISO to be included here. The project will never distribute the game, its disc image, or its extracted files.
 
@@ -14,14 +14,14 @@ Most of the project's research, code, and documentation have been produced with 
 
 ## What will I need when a tested release is available?
 
-The planned launcher will guide players through setup. The current plan is:
+The launcher guides players through local setup. A tested release will require these steps.
 
 1. Use a supported 64-bit Windows 10 or Windows 11 PC.
 2. Provide your own legally obtained original Xbox copy of *Steel Battalion* in a supported image format.
 3. Choose your original Steel Battalion controller, if available, or a supported keyboard, mouse, gamepad, HOTAS, or custom controller profile.
 4. Adjust the display and control settings, then start the game from the launcher.
 
-These are planned capabilities, not available features. The original Steel Battalion controller's inputs and indicator lights are a priority, but hardware and adapter support still needs to be implemented and verified. The launcher is also planned to offer an optional shortcut that adds the game to Steam as a non-Steam game; it will not add a Steam store license.
+The launcher can recognize the original controller’s USB adapter path and preview its input reports. Physical controller verification, indicator-light output and runtime support for launcher profiles are pending. An optional non-Steam shortcut remains planned.
 
 ## How will compatibility be checked?
 
