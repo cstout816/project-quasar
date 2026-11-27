@@ -2,7 +2,7 @@
 
 ## Current checkpoint
 
-The current Windows AOT candidate completed the original engine startup twice from the saved-pilot route. The in-game checklist accepted the five mapped switches once it was ready, and the running cockpit showed the instruments, terrain and an advancing mission clock. On the second run the VT shifted into first gear and accelerated to 5 km/h. Running at 640×480, the two runs published about **2.27–2.33 FPS**. Steering and braking have been observed on an earlier build. Combat, the 30 FPS target, mission completion and saved progression still need verification.
+The current Windows AOT candidate repeatedly completed the original engine startup from the saved-pilot route. The VT responds to first gear, acceleration and steering, and the running cockpit shows terrain and an advancing mission clock. Braking brought the VT to a stop, and a straight departure kept the main view readable. In a contact test, the mapped main weapon fired, ammunition dropped from 20 to 19, and the original reload indicator appeared. At 640×480, the running cockpit tests measured **2.27–2.33 FPS**. Player lock-on, hits, the 30 FPS target, mission completion and saved progression still need verification.
 
 A native stack sample from the live cockpit found repeated diagnostic-setting lookups in the rasterizer. The settings are now read once at startup. The executor fixture matched all 56,993 covered pixels and preserved the infinite-W texture check in its normal and three diagnostic modes. A 640×480 cold-cockpit sample on the new build measured 1.67 FPS, with a median interval of 601 ms. The 30 FPS target and graphics readability remain open.
 
