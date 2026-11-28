@@ -121,6 +121,76 @@ static void put_vertex(uint32_t n, float x, float y, uint32_t c)
     memcpy(s_mem + DIFF_AT + 4u * n, &c, 4);
 }
 
+static int horizontal_line_visible(const uint32_t *pixels)
+{
+    return close_rgb(pixels[20 * W + 40], 0xFFFFFFFFu)
+        && !(pixels[19 * W + 40] & 0xFFFFFFu)
+        && !(pixels[21 * W + 40] & 0xFFFFFFu);
+}
+
+static int check_program_lines(void)
+{
+    const uint32_t white = 0xFFFFFFFFu;
+    const uint32_t *pixels = (const uint32_t *)(s_mem + COLOR_AT);
+    const uint32_t position[4] = {0, (1u << 21) | 0x1Bu, 2u << 26, 0xF800u};
+    const uint32_t diffuse[4] = {0, (1u << 21) | (3u << 9) | 0x1Bu,
+                                 2u << 26, 0xF800u | (3u << 3) | 1u};
+    nv2a_vsh_set_instruction(0, position);
+    nv2a_vsh_set_instruction(1, diffuse);
+    m(0x1E94, 2);
+    put_vertex(0, 20.5f, 20.5f, white);
+    put_vertex(1, 60.5f, 20.5f, white);
+    put_vertex(2, 60.5f, 60.5f, white);
+    m(0x1720, POS_AT);  m(0x1760, 2 | (3 << 4) | (12 << 8));
+    m(0x172C, DIFF_AT); m(0x176C, 0 | (4 << 4) | (4 << 8));
+
+    /* Single two-index line, line loop, line strip. The neighborhood and
+     * unjoined diagonal checks catch filling the line strip as a triangle. */
+    for (uint32_t prim = 2; prim <= 4; ++prim) {
+        memset(s_mem + COLOR_AT, 0, W * H * sizeof(*pixels));
+        m(0x17FC, prim);
+        m(0x1810, (prim == 2 ? 1u : 2u) << 24);
+        m(0x17FC, 0);
+        if (!horizontal_line_visible(pixels)
+            || !close_rgb(pixels[40 * W + 60], prim == 2 ? 0 : white)
+            || !close_rgb(pixels[40 * W + 40], prim == 3 ? white : 0)) {
+            printf("FAIL: expected line pixels for primitive %u\n", prim);
+            return 1;
+        }
+    }
+
+    memset(s_mem + COLOR_AT, 0, W * H * sizeof(*pixels));
+    m(0x17FC, 2);
+    for (int i = 0; i < 2; ++i) {
+        mf(0x1818, i == 0 ? 20.5f : 60.5f);
+        mf(0x1818, 20.5f);
+        mf(0x1818, 0.0f);
+        m(0x1818, white);
+    }
+    m(0x17FC, 0);
+    if (!horizontal_line_visible(pixels)) {
+        puts("FAIL: two inline vertices did not draw one line");
+        return 1;
+    }
+
+    memset(s_mem + COLOR_AT, 0, W * H * sizeof(*pixels));
+    m(0x17FC, 2);
+    for (int i = 0; i < 4; ++i)
+        mf(0x1A30 + 4 * i, 1.0f); /* current diffuse attribute */
+    for (int i = 0; i < 2; ++i) {
+        mf(0x1500, i == 0 ? 20.5f : 60.5f);
+        mf(0x1504, 20.5f);
+        mf(0x1508, 0.0f);
+    }
+    m(0x17FC, 0);
+    if (!horizontal_line_visible(pixels)) {
+        puts("FAIL: two immediate vertices did not draw one line");
+        return 1;
+    }
+    puts("PASS: programmable line list, loop and strip, including two inline and immediate vertices");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     static const float I[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
@@ -150,6 +220,8 @@ int main(int argc, char **argv)
     m(0x0210, COLOR_AT);                     /* SET_SURFACE_COLOR_OFFSET */
     for (i = 0; i < 16; i++)
         mf(0x0680 + 4 * i, I[i]);            /* composite: positions are pixels */
+    if (argc == 2 && strcmp(argv[1], "lines") == 0)
+        return check_program_lines();
     if (program) {
         /* mov oPos, v0; mov oD0, v3.zyxw; final. Swapping red and blue
          * makes a fixed-function fallback fail the pixel check. */

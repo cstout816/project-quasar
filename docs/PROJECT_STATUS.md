@@ -6,6 +6,8 @@ The current Windows AOT candidate repeatedly completed the original engine start
 
 Two local XboxRecomp patches reduce work in programmable vertex rendering. The interpreter reads only the operands used by each instruction, and the draw fetches only the vertex attributes the active program reads. The interpreter passed 2,048 exact output comparisons. Fixed-function and programmable render tests each checked 65,536 pixels with zero mismatches. The patches await an incremental game build and a live frame-rate comparison.
 
+On the retained game build, the original controls selected second gear and reached 38 km/h. The cockpit stayed readable and displayed the incoming-fire warning. A target lock still needs verification. A renderer test reproduced missing programmable line draws. The corrected CPU path passes the line list, strip and loop tests, including two-vertex inline and immediate submissions. An updated game build is needed to validate the targeting display.
+
 A native stack sample from the live cockpit found repeated diagnostic-setting lookups in the rasterizer. The settings are now read once at startup. The executor fixture matched all 56,993 covered pixels and preserved the infinite-W texture check in its normal and three diagnostic modes. A 640×480 cold-cockpit sample on the new build measured 1.67 FPS, with a median interval of 601 ms. The 30 FPS target and graphics readability remain open.
 
 Texture-trace setup now happens once at startup. A synthetic 200-quad test using the actual software rasterizer measured a median of 193 ms after the change, compared with 484 ms before. The next 640×480 sample measured 2.54 FPS in the cold cockpit and 1.64 FPS on the running HUD.
